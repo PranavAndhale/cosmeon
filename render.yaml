@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: cosmeon
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////app/cosmeon.db
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: INFO
+    healthCheckPath: /api/health

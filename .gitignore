@@ -1,0 +1,32 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.egg-info/
+dist/
+build/
+.env
+data/raw/*
+data/processed/*
+logs/*
+*.pth
+.DS_Store
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!logs/.gitkeep
+
+# Keep trained ML models (small, needed for deployment)
+!data/processed/flood_predictor.joblib
+!data/processed/flood_scaler.joblib
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Static dir (built frontend served by FastAPI — generated, not committed)
+static/
+
+# Claude Code
+.claude/

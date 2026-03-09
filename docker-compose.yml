@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  # COSMEON API Server
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - cosmeon-db:/app/db
+    environment:
+      - DATABASE_URL=sqlite:////app/db/cosmeon.db
+      - LOG_LEVEL=INFO
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    command: python main.py api
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # COSMEON Pipeline Runner (one-off)
+  pipeline:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - cosmeon-db:/app/db
+    environment:
+      - DATABASE_URL=sqlite:////app/db/cosmeon.db
+      - LOG_LEVEL=INFO
+    command: python main.py pipeline
+    profiles:
+      - pipeline
+
+  # Dashboard (static file server)
+  dashboard:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+
+volumes:
+  cosmeon-db:

@@ -1,0 +1,49 @@
+# ─── Stage 1: Build Next.js static export ───
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+
+# Set NEXT_BUILD_MODE=export so next.config.ts uses output: "export"
+ENV NEXT_BUILD_MODE=export
+RUN npm run build
+
+# ─── Stage 2: Python runtime + static files ───
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install Python dependencies (web-only, no GDAL/PyTorch)
+COPY requirements-web.txt .
+RUN pip install --no-cache-dir -r requirements-web.txt
+
+# Copy backend application code
+COPY api/ ./api/
+COPY config/ ./config/
+COPY database/ ./database/
+COPY processing/ ./processing/
+COPY ml/ ./ml/
+COPY main.py .
+COPY seed_demo.py .
+COPY .env .
+
+# Create required directories
+RUN mkdir -p data/raw data/processed logs
+
+# Copy trained ML model files if they exist in the repo
+# Using a shell trick to avoid COPY failure when files don't exist
+RUN --mount=type=bind,source=data/processed,target=/tmp/models \
+    cp /tmp/models/flood_predictor.joblib ./data/processed/ 2>/dev/null || true && \
+    cp /tmp/models/flood_scaler.joblib ./data/processed/ 2>/dev/null || true
+
+# Copy built frontend from Stage 1
+COPY --from=frontend-build /frontend/out ./static
+
+# Expose port (Render injects PORT env variable)
+EXPOSE 10000
+
+# Startup: seed database then launch API
+CMD python seed_demo.py && uvicorn api.routes:app --host 0.0.0.0 --port ${PORT:-10000}
