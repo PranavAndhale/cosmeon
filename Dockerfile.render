@@ -26,18 +26,12 @@ COPY config/ ./config/
 COPY database/ ./database/
 COPY processing/ ./processing/
 COPY ml/ ./ml/
+COPY data/processed/ ./data/processed/
 COPY main.py .
 COPY seed_demo.py .
-COPY .env .
 
 # Create required directories
-RUN mkdir -p data/raw data/processed logs
-
-# Copy trained ML model files if they exist in the repo
-# Using a shell trick to avoid COPY failure when files don't exist
-RUN --mount=type=bind,source=data/processed,target=/tmp/models \
-    cp /tmp/models/flood_predictor.joblib ./data/processed/ 2>/dev/null || true && \
-    cp /tmp/models/flood_scaler.joblib ./data/processed/ 2>/dev/null || true
+RUN mkdir -p data/raw logs
 
 # Copy built frontend from Stage 1
 COPY --from=frontend-build /frontend/out ./static
