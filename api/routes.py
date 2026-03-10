@@ -28,6 +28,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -480,6 +481,74 @@ async def auto_analyze_on_startup():
     asyncio.create_task(run_analysis())
 
 
+# ── Analyze Location (must come BEFORE /api/analyze/{region_id}) ──────────
+class LocationRequest(BaseModel):
+    lat: float
+    lon: float
+    name: Optional[str] = None
+
+
+@app.post("/api/analyze/location")
+def analyze_location(req: LocationRequest):
+    """
+    Run live flood risk analysis for any arbitrary lat/lon on Earth.
+    Combines live detection + ML prediction + GloFAS validation.
+    """
+    lat, lon = req.lat, req.lon
+    name = req.name or f"{lat:.2f}, {lon:.2f}"
+
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Invalid coordinates")
+
+    # 1. Live detection (discharge, rainfall, etc.)
+    detection = analysis_engine.analyze_by_coords(lat, lon, name)
+
+    # 2. ML prediction (GBM + LSTM ensemble)
+    ml_prediction = predictor.predict_by_coords(lat, lon, name)
+
+    # 3. GloFAS validation
+    from processing.live_flood_data import LiveFloodDataFetcher
+    live_fetcher = LiveFloodDataFetcher()
+    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+
+    validation_result = live_fetcher.validate_prediction(
+        lat=lat, lon=lon,
+        our_risk_level=ml_prediction.predicted_risk_level,
+        our_probability=ml_prediction.flood_probability,
+        our_confidence=ml_prediction.confidence,
+    )
+
+    return {
+        "status": "analysis_complete",
+        "location": {"lat": lat, "lon": lon, "name": name},
+        "detection": detection.to_dict(),
+        "prediction": ml_prediction.to_dict(),
+        "validation": validation_result.to_dict(),
+        "discharge_data": discharge.to_dict(),
+    }
+
+
+@app.post("/api/analyze/all")
+def run_analysis_all_regions():
+    """Run live automated analysis on ALL monitored regions."""
+    all_regions = db.get_all_regions()
+    if not all_regions:
+        return {"status": "no_regions", "results": []}
+
+    regions_data = [
+        {"id": r.id, "name": r.name, "bbox": r.bbox}
+        for r in all_regions
+    ]
+    results = analysis_engine.analyze_all_regions(regions_data)
+
+    return {
+        "status": "analysis_complete",
+        "regions_analyzed": len(results),
+        "alerts_generated": sum(1 for r in results if r.alert_triggered),
+        "results": [r.to_dict() for r in results],
+    }
+
+
 @app.post("/api/analyze/{region_id}")
 def run_live_analysis(region_id: int):
     """
@@ -525,27 +594,6 @@ def run_live_analysis(region_id: int):
     return {
         "status": "analysis_complete",
         "detection": result.to_dict(),
-    }
-
-
-@app.post("/api/analyze/all")
-def run_analysis_all_regions():
-    """Run live automated analysis on ALL monitored regions."""
-    all_regions = db.get_all_regions()
-    if not all_regions:
-        return {"status": "no_regions", "results": []}
-
-    regions_data = [
-        {"id": r.id, "name": r.name, "bbox": r.bbox}
-        for r in all_regions
-    ]
-    results = analysis_engine.analyze_all_regions(regions_data)
-
-    return {
-        "status": "analysis_complete",
-        "regions_analyzed": len(results),
-        "alerts_generated": sum(1 for r in results if r.alert_triggered),
-        "results": [r.to_dict() for r in results],
     }
 
 
@@ -622,54 +670,85 @@ def get_training_metrics():
     return {"status": "ok", "metrics": metrics}
 
 
-# --- Any-Location Analysis ---
+# --- Geocoding (place name → coordinates) ---
 
-from pydantic import BaseModel
-
-class LocationRequest(BaseModel):
-    lat: float
-    lon: float
-    name: Optional[str] = None
+import urllib.request
+import urllib.parse
+import json as _json
 
 
-@app.post("/api/analyze/location")
-def analyze_location(req: LocationRequest):
+@app.get("/api/geocode")
+def geocode_search(q: str = Query(..., min_length=2)):
     """
-    Run live flood risk analysis for any arbitrary lat/lon on Earth.
-    Combines live detection + ML prediction + GloFAS validation.
+    Forward geocoding: convert place name → lat/lon coordinates.
+    Uses OpenStreetMap Nominatim (free, no key required).
+    Returns up to 8 results with display_name, lat, lon, type.
     """
-    lat, lon = req.lat, req.lon
-    name = req.name or f"{lat:.2f}, {lon:.2f}"
+    try:
+        encoded = urllib.parse.quote(q)
+        url = (
+            f"https://nominatim.openstreetmap.org/search"
+            f"?q={encoded}&format=json&limit=8&addressdetails=1"
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "COSMEON/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
 
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-        raise HTTPException(status_code=400, detail="Invalid coordinates")
+        results = []
+        for item in data:
+            results.append({
+                "display_name": item.get("display_name", ""),
+                "lat": float(item.get("lat", 0)),
+                "lon": float(item.get("lon", 0)),
+                "type": item.get("type", ""),
+                "class": item.get("class", ""),
+                "importance": float(item.get("importance", 0)),
+            })
 
-    # 1. Live detection (discharge, rainfall, etc.)
-    detection = analysis_engine.analyze_by_coords(lat, lon, name)
+        return {"query": q, "count": len(results), "results": results}
+    except Exception as e:
+        logger.warning("Geocode failed for '%s': %s", q, e)
+        return {"query": q, "count": 0, "results": [], "error": str(e)}
 
-    # 2. ML prediction (GBM + LSTM ensemble)
-    ml_prediction = predictor.predict_by_coords(lat, lon, name)
 
-    # 3. GloFAS validation
-    from processing.live_flood_data import LiveFloodDataFetcher
-    live_fetcher = LiveFloodDataFetcher()
-    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+@app.get("/api/geocode/reverse")
+def reverse_geocode(lat: float = Query(...), lon: float = Query(...)):
+    """
+    Reverse geocoding: convert lat/lon → place name.
+    Uses OpenStreetMap Nominatim (free, no key required).
+    """
+    try:
+        url = (
+            f"https://nominatim.openstreetmap.org/reverse"
+            f"?lat={lat}&lon={lon}&format=json&zoom=10"
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "COSMEON/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
 
-    validation_result = live_fetcher.validate_prediction(
-        lat=lat, lon=lon,
-        our_risk_level=ml_prediction.predicted_risk_level,
-        our_probability=ml_prediction.flood_probability,
-        our_confidence=ml_prediction.confidence,
-    )
+        display = data.get("display_name", f"{lat:.2f}, {lon:.2f}")
+        # Build a short name from address parts
+        addr = data.get("address", {})
+        parts = []
+        for key in ["city", "town", "village", "hamlet", "county", "state", "country"]:
+            if key in addr:
+                parts.append(addr[key])
+                if len(parts) >= 2:
+                    break
+        short_name = ", ".join(parts) if parts else display.split(",")[0].strip()
 
-    return {
-        "status": "analysis_complete",
-        "location": {"lat": lat, "lon": lon, "name": name},
-        "detection": detection.to_dict(),
-        "prediction": ml_prediction.to_dict(),
-        "validation": validation_result.to_dict(),
-        "discharge_data": discharge.to_dict(),
-    }
+        return {
+            "lat": lat, "lon": lon,
+            "display_name": display,
+            "short_name": short_name,
+        }
+    except Exception as e:
+        logger.warning("Reverse geocode failed for (%s, %s): %s", lat, lon, e)
+        return {
+            "lat": lat, "lon": lon,
+            "display_name": f"{lat:.2f}, {lon:.2f}",
+            "short_name": f"{lat:.2f}, {lon:.2f}",
+        }
 
 
 @app.get("/api/explain/location")

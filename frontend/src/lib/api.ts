@@ -4,7 +4,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 async function safeFetch(url: string) {
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json();
     } catch {
@@ -62,7 +62,7 @@ export async function fetchDetection(regionId: number) {
 
 export async function triggerAnalysis(regionId: number) {
     try {
-        const res = await fetch(`${API}/analyze/${regionId}`, { method: 'POST' });
+        const res = await fetch(`${API}/analyze/${regionId}`, { method: 'POST', cache: 'no-store' });
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json();
     } catch {
@@ -88,6 +88,7 @@ export async function analyzeLocation(lat: number, lon: number, name?: string) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
         });
         if (!res.ok) throw new Error(`${res.status}`);
         return res.json();
@@ -98,4 +99,34 @@ export async function analyzeLocation(lat: number, lon: number, name?: string) {
 
 export async function explainLocation(lat: number, lon: number) {
     return safeFetch(`${API}/explain/location?lat=${lat}&lon=${lon}`);
+}
+
+export interface GeoResult {
+    display_name: string;
+    lat: number;
+    lon: number;
+    type: string;
+    class: string;
+    importance: number;
+}
+
+export async function geocodeSearch(query: string): Promise<GeoResult[]> {
+    try {
+        const res = await fetch(`${API}/geocode?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.results || [];
+    } catch {
+        return [];
+    }
+}
+
+export async function reverseGeocode(lat: number, lon: number): Promise<{ display_name: string; short_name: string }> {
+    try {
+        const res = await fetch(`${API}/geocode/reverse?lat=${lat}&lon=${lon}`, { cache: 'no-store' });
+        if (!res.ok) return { display_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, short_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
+        return res.json();
+    } catch {
+        return { display_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, short_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
+    }
 }
