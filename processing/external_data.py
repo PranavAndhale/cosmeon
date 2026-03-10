@@ -184,10 +184,17 @@ class ExternalDataIntegrator:
         Returns:
             ExternalRiskFactors with all external data
         """
-        # Center of bbox
         lat = (bbox[1] + bbox[3]) / 2
         lon = (bbox[0] + bbox[2]) / 2
+        return self.get_risk_factors_by_coords(lat, lon)
 
+    def get_risk_factors_by_coords(self, lat: float, lon: float) -> ExternalRiskFactors:
+        """
+        Get all external risk factors for arbitrary coordinates.
+
+        Enables ad-hoc analysis of any location on Earth without
+        requiring a pre-registered region in the database.
+        """
         logger.info("Fetching external risk factors for lat=%.2f, lon=%.2f", lat, lon)
 
         rainfall = self.fetch_rainfall(lat, lon)
@@ -198,7 +205,7 @@ class ExternalDataIntegrator:
             rainfall_mm=rainfall.get("total_rainfall_mm", 0),
             elevation_mean_m=elevation.get("mean_elevation_m", 0),
             elevation_min_m=elevation.get("min_elevation_m", 0),
-            rainfall_anomaly=0,  # Would need historical normals
+            rainfall_anomaly=0,
             low_elevation_pct=elevation.get("low_elevation_pct", 0),
             risk_multiplier=risk_multiplier,
         )

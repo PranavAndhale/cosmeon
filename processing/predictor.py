@@ -62,18 +62,11 @@ class FloodPrediction:
 
 class FloodPredictor:
     """
-    Predicts flood risk based on historical patterns and external data.
+    Predicts flood risk using an ensemble of:
+      - Gradient Boosting Classifier (13 tabular features) — weight 0.6
+      - LSTM (30-day weather sequences) — weight 0.4 (if trained)
 
-    Uses a Gradient Boosting Classifier trained on 13 features:
-      - Historical flood percentage (rolling average, max, trend)
-      - Recent and cumulative rainfall
-      - Max daily rainfall
-      - Precipitation anomaly
-      - Soil moisture
-      - Temperature
-      - Elevation profile
-      - Seasonal indicators
-      - External risk multiplier
+    Falls back to GBM-only if LSTM is not available.
     """
 
     FEATURE_NAMES = [
@@ -82,6 +75,9 @@ class FloodPredictor:
         "precip_7d", "precip_30d", "max_daily_rain_7d",
         "precip_anomaly", "soil_moisture", "temperature",
     ]
+
+    GBM_WEIGHT = 0.6
+    LSTM_WEIGHT = 0.4
 
     def __init__(self):
         self.model = GradientBoostingClassifier(
@@ -96,6 +92,15 @@ class FloodPredictor:
         self.is_trained = False
         self.risk_labels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
         self._training_metrics = {}
+
+        # LSTM model (optional ensemble enhancement)
+        self._lstm_manager = None
+        try:
+            from ml.lstm_model import LSTMFloodManager
+            self._lstm_manager = LSTMFloodManager()
+            logger.info("LSTM model loaded (ensemble mode available)")
+        except Exception as e:
+            logger.info("LSTM not available: %s (GBM-only mode)", e)
 
         # Try loading a persisted model on init
         if self._load_persisted_model():
@@ -335,36 +340,62 @@ class FloodPredictor:
         region_name: str = "Unknown",
     ) -> FloodPrediction:
         """
-        Predict flood risk for the next period.
+        Predict flood risk using GBM + LSTM ensemble (if LSTM trained).
 
         Args:
             flood_history: list of recent risk assessment dicts
             external_factors: dict from ExternalDataIntegrator
             region_name: Name of the region
+            lat: optional latitude for LSTM sequence fetching
+            lon: optional longitude for LSTM sequence fetching
 
         Returns:
             FloodPrediction with risk forecast
         """
         if not self.is_trained:
-            # Auto-train — try real data first, fall back to synthetic
             logger.info("Model not trained. Attempting training with real data...")
             self.train_on_real_data()
 
         features = self._extract_features(flood_history, external_factors)
         features_scaled = self.scaler.transform(features)
 
-        # Get prediction and probabilities
-        pred_class = self.model.predict(features_scaled)[0]
-        pred_proba = self.model.predict_proba(features_scaled)[0]
+        # GBM prediction
+        gbm_proba = self.model.predict_proba(features_scaled)[0]
 
+        # LSTM ensemble (if available and trained)
+        model_version = "gbm_v2"
+        lstm_proba = None
+        lat = external_factors.get("_lat") if external_factors else None
+        lon = external_factors.get("_lon") if external_factors else None
+
+        if self._lstm_manager and self._lstm_manager.is_trained and lat and lon:
+            try:
+                from processing.lstm_trainer import LSTMDataBuilder
+                builder = LSTMDataBuilder()
+                sequence = builder.build_sequence_for_prediction(lat, lon, days=30)
+                lstm_proba = self._lstm_manager.predict_proba(sequence)
+                model_version = "ensemble_gbm_lstm"
+                logger.info("LSTM proba: %s", [round(p, 3) for p in lstm_proba])
+            except Exception as e:
+                logger.warning("LSTM prediction failed, using GBM only: %s", e)
+
+        # Ensemble combination
+        if lstm_proba is not None:
+            # Ensure both have 4 classes
+            if len(gbm_proba) == 4 and len(lstm_proba) == 4:
+                final_proba = self.GBM_WEIGHT * gbm_proba + self.LSTM_WEIGHT * lstm_proba
+            else:
+                final_proba = gbm_proba
+        else:
+            final_proba = gbm_proba
+
+        pred_class = int(np.argmax(final_proba))
         predicted_level = self.risk_labels[pred_class]
-        flood_probability = float(pred_proba[pred_class])
+        flood_probability = float(final_proba[pred_class])
 
-        # Confidence based on probability margin
-        sorted_proba = sorted(pred_proba, reverse=True)
+        sorted_proba = sorted(final_proba, reverse=True)
         confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
 
-        # Contributing factors with importances
         importances = self.model.feature_importances_
         contributing = {
             name: round(float(imp), 3)
@@ -378,18 +409,48 @@ class FloodPredictor:
             flood_probability=round(flood_probability, 3),
             confidence=round(float(confidence), 3),
             contributing_factors=contributing,
+            model_version=model_version,
         )
 
         logger.info(
-            "Prediction: region=%s | risk=%s | probability=%.3f | confidence=%.3f",
-            region_name, predicted_level, flood_probability, confidence,
+            "Prediction: region=%s | risk=%s | prob=%.3f | conf=%.3f | model=%s",
+            region_name, predicted_level, flood_probability, confidence, model_version,
         )
-
         return prediction
+
+    def predict_by_coords(
+        self,
+        lat: float,
+        lon: float,
+        name: str = "Custom Location",
+    ) -> FloodPrediction:
+        """
+        Predict flood risk for arbitrary coordinates (no database required).
+
+        Fetches external factors on the fly and runs the ensemble.
+        """
+        from processing.external_data import ExternalDataIntegrator
+        integrator = ExternalDataIntegrator()
+        factors = integrator.get_risk_factors_by_coords(lat, lon)
+        factors_dict = factors.to_dict()
+        factors_dict["_lat"] = lat
+        factors_dict["_lon"] = lon
+
+        return self.predict(
+            flood_history=[],
+            external_factors=factors_dict,
+            region_name=name,
+        )
 
     def get_training_metrics(self) -> dict:
         """Return the most recent training metrics."""
         return self._training_metrics
+
+    def get_lstm_metrics(self) -> dict:
+        """Return LSTM training metrics if available."""
+        if self._lstm_manager:
+            return self._lstm_manager.get_training_metrics()
+        return {}
 
     # ── Explainability ──
 

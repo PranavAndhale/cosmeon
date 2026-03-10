@@ -81,3 +81,21 @@ export async function fetchExplanation(regionId: number) {
 export function getReportDownloadUrl(regionId: number) {
     return `${API}/reports/${regionId}/download`;
 }
+
+export async function analyzeLocation(lat: number, lon: number, name?: string) {
+    try {
+        const res = await fetch(`${API}/analyze/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+        return res.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function explainLocation(lat: number, lon: number) {
+    return safeFetch(`${API}/explain/location?lat=${lat}&lon=${lon}`);
+}

@@ -49,6 +49,11 @@ RISK_THRESHOLDS = {
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
+# ML Model paths
+LSTM_MODEL_PATH = PROCESSED_DIR / "flood_lstm.pth"
+LSTM_SCALER_PATH = PROCESSED_DIR / "flood_lstm_scaler.npz"
+UNET_MODEL_PATH = PROCESSED_DIR / "flood_unet.pth"
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE = LOGS_DIR / "cosmeon.log"

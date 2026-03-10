@@ -4,7 +4,8 @@ Phase 7: U-Net ML Model for Flood Segmentation.
 Provides a deep learning-based flood detection alternative to NDWI thresholding.
 Uses a lightweight U-Net architecture for binary segmentation (flood/no-flood).
 
-Can be trained on the Sen1Floods11 dataset or used with pretrained weights.
+Trained on Sen1Floods11 dataset (Sentinel-1 SAR: VV + VH channels).
+Includes Dice+BCE combined loss for class imbalance and IoU metric.
 """
 import logging
 from pathlib import Path
@@ -18,6 +19,43 @@ from torch.utils.data import Dataset, DataLoader
 from config.settings import PROCESSED_DIR
 
 logger = logging.getLogger("cosmeon.ml")
+
+UNET_MODEL_PATH = PROCESSED_DIR / "flood_unet.pth"
+
+
+# --- Losses & Metrics ---
+
+class DiceBCELoss(nn.Module):
+    """Combined Dice + BCE loss for flood segmentation (handles class imbalance)."""
+
+    def __init__(self, dice_weight: float = 0.5, bce_weight: float = 0.5, smooth: float = 1.0):
+        super().__init__()
+        self.dice_weight = dice_weight
+        self.bce_weight = bce_weight
+        self.smooth = smooth
+        self.bce = nn.BCELoss()
+
+    def forward(self, pred, target):
+        bce_loss = self.bce(pred, target)
+
+        pred_flat = pred.view(-1)
+        target_flat = target.view(-1)
+        intersection = (pred_flat * target_flat).sum()
+        dice_loss = 1 - (2 * intersection + self.smooth) / (
+            pred_flat.sum() + target_flat.sum() + self.smooth
+        )
+
+        return self.bce_weight * bce_loss + self.dice_weight * dice_loss
+
+
+def compute_iou(pred: torch.Tensor, target: torch.Tensor, threshold: float = 0.5) -> float:
+    """Compute Intersection over Union (IoU) for binary segmentation."""
+    pred_binary = (pred > threshold).float()
+    intersection = (pred_binary * target).sum()
+    union = pred_binary.sum() + target.sum() - intersection
+    if union == 0:
+        return 1.0  # both empty = perfect match
+    return float(intersection / union)
 
 
 # --- U-Net Architecture ---
@@ -44,11 +82,11 @@ class FloodUNet(nn.Module):
     """
     Lightweight U-Net for flood segmentation.
 
-    Input: (B, C, H, W) - satellite image bands
+    Input: (B, C, H, W) - satellite image bands (default 2 for Sentinel-1 VV+VH)
     Output: (B, 1, H, W) - flood probability mask
     """
 
-    def __init__(self, in_channels=4, out_channels=1):
+    def __init__(self, in_channels=2, out_channels=1):
         super().__init__()
 
         # Encoder
@@ -151,16 +189,19 @@ class FloodDataset(Dataset):
 class FloodModelManager:
     """Manages the flood segmentation ML model."""
 
-    def __init__(self, model_path: str = None, in_channels: int = 4):
+    def __init__(self, model_path: str = None, in_channels: int = 2):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = FloodUNet(in_channels=in_channels).to(self.device)
-        self.model_path = model_path or str(PROCESSED_DIR / "flood_unet.pth")
+        self.model_path = model_path or str(UNET_MODEL_PATH)
+        self.is_trained = False
+        self._training_metrics = {}
 
         if Path(self.model_path).exists():
             self.load_model()
-            logger.info("Loaded pretrained model from %s", self.model_path)
+            self.is_trained = True
+            logger.info("Loaded pretrained U-Net from %s", self.model_path)
         else:
-            logger.info("No pretrained model found. Using untrained model.")
+            logger.info("No pretrained U-Net found. Using untrained model.")
 
     def train(
         self,
@@ -169,26 +210,42 @@ class FloodModelManager:
         epochs: int = 20,
         batch_size: int = 8,
         lr: float = 1e-4,
+        val_split: float = 0.2,
     ) -> dict:
-        """Train the flood segmentation model."""
-        logger.info("Starting training: %d images, %d epochs", len(images), epochs)
+        """Train the flood segmentation model with Dice+BCE loss and IoU tracking."""
+        logger.info("Starting U-Net training: %d images, %d epochs", len(images), epochs)
 
-        dataset = FloodDataset(images, masks)
-        if len(dataset) == 0:
+        # Train/val split
+        n = len(images)
+        n_val = int(n * val_split)
+        indices = np.random.RandomState(42).permutation(n)
+        val_idx, train_idx = indices[:n_val], indices[n_val:]
+
+        train_imgs = [images[i] for i in train_idx]
+        train_masks = [masks[i] for i in train_idx]
+        val_imgs = [images[i] for i in val_idx]
+        val_masks = [masks[i] for i in val_idx]
+
+        train_ds = FloodDataset(train_imgs, train_masks)
+        val_ds = FloodDataset(val_imgs, val_masks) if val_imgs else None
+
+        if len(train_ds) == 0:
             logger.error("No training patches created")
             return {"error": "No training data"}
 
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        val_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False) if val_ds and len(val_ds) > 0 else None
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-        criterion = nn.BCELoss()
+        criterion = DiceBCELoss()
 
         self.model.train()
-        history = {"loss": []}
+        best_iou = 0.0
+        history = {"train_loss": [], "val_loss": [], "val_iou": []}
 
         for epoch in range(epochs):
             epoch_loss = 0.0
-            for batch_img, batch_mask in dataloader:
+            for batch_img, batch_mask in train_dl:
                 batch_img = batch_img.to(self.device)
                 batch_mask = batch_mask.to(self.device)
 
@@ -200,15 +257,55 @@ class FloodModelManager:
 
                 epoch_loss += loss.item()
 
-            avg_loss = epoch_loss / len(dataloader)
-            history["loss"].append(avg_loss)
+            avg_loss = epoch_loss / len(train_dl)
+            history["train_loss"].append(round(avg_loss, 4))
+
+            # Validation
+            if val_dl:
+                val_loss, val_iou = 0.0, 0.0
+                n_batches = 0
+                self.model.eval()
+                with torch.no_grad():
+                    for batch_img, batch_mask in val_dl:
+                        batch_img = batch_img.to(self.device)
+                        batch_mask = batch_mask.to(self.device)
+                        pred = self.model(batch_img)
+                        val_loss += criterion(pred, batch_mask).item()
+                        val_iou += compute_iou(pred, batch_mask)
+                        n_batches += 1
+                self.model.train()
+                val_loss /= max(n_batches, 1)
+                val_iou /= max(n_batches, 1)
+                history["val_loss"].append(round(val_loss, 4))
+                history["val_iou"].append(round(val_iou, 4))
+
+                if val_iou > best_iou:
+                    best_iou = val_iou
+                    self.save_model()
 
             if (epoch + 1) % 5 == 0:
-                logger.info("Epoch %d/%d | Loss: %.4f", epoch + 1, epochs, avg_loss)
+                logger.info(
+                    "Epoch %d/%d | Loss: %.4f | Val IoU: %.4f",
+                    epoch + 1, epochs, avg_loss,
+                    history["val_iou"][-1] if history["val_iou"] else 0,
+                )
 
-        self.save_model()
-        logger.info("Training complete. Model saved to %s", self.model_path)
-        return history
+        if best_iou == 0:
+            self.save_model()
+
+        self.is_trained = True
+        self._training_metrics = {
+            "total_images": n,
+            "train_images": len(train_imgs),
+            "val_images": len(val_imgs),
+            "epochs": epochs,
+            "best_val_iou": round(best_iou, 4),
+            "final_train_loss": history["train_loss"][-1] if history["train_loss"] else None,
+            "model_type": "U-Net (Sentinel-1 VV+VH, DiceBCE Loss)",
+        }
+
+        logger.info("U-Net training complete. Best IoU: %.4f", best_iou)
+        return self._training_metrics
 
     def predict(self, band_data: dict, threshold: float = 0.5) -> np.ndarray:
         """
@@ -223,20 +320,21 @@ class FloodModelManager:
         """
         self.model.eval()
 
-        # Stack available bands into input tensor
         bands = band_data["bands"]
         band_arrays = []
-        for band_name in ["B03", "B04", "B08", "B8A"]:
+
+        # Prefer Sentinel-1 VV/VH for Sen1Floods11-trained model
+        for band_name in ["VV", "VH", "B03", "B04", "B08", "B8A"]:
             if band_name in bands:
                 band_arrays.append(bands[band_name])
+            if len(band_arrays) >= self.model.enc1.conv[0].in_channels:
+                break
 
         if not band_arrays:
-            # Fallback: use whatever bands are available
-            band_arrays = list(bands.values())[:4]
+            band_arrays = list(bands.values())[:2]
 
         # Normalize and stack
         input_array = np.stack(band_arrays, axis=0).astype(np.float32)
-        # Simple min-max normalization per band
         for i in range(input_array.shape[0]):
             band = input_array[i]
             bmin, bmax = np.nanmin(band), np.nanmax(band)
@@ -250,10 +348,13 @@ class FloodModelManager:
 
         flood_mask = (pred.squeeze().cpu().numpy() > threshold).astype(np.uint8)
         logger.info(
-            "ML prediction: %d flood pixels (%.2f%%)",
-            flood_mask.sum(), flood_mask.sum() / flood_mask.size * 100,
+            "U-Net prediction: %d flood pixels (%.2f%%)",
+            flood_mask.sum(), flood_mask.sum() / max(flood_mask.size, 1) * 100,
         )
         return flood_mask
+
+    def get_training_metrics(self) -> dict:
+        return self._training_metrics
 
     def save_model(self):
         """Save model weights."""
@@ -263,6 +364,6 @@ class FloodModelManager:
     def load_model(self):
         """Load model weights."""
         self.model.load_state_dict(
-            torch.load(self.model_path, map_location=self.device)
+            torch.load(self.model_path, map_location=self.device, weights_only=True)
         )
         self.model.eval()

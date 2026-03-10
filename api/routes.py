@@ -622,6 +622,218 @@ def get_training_metrics():
     return {"status": "ok", "metrics": metrics}
 
 
+# --- Any-Location Analysis ---
+
+from pydantic import BaseModel
+
+class LocationRequest(BaseModel):
+    lat: float
+    lon: float
+    name: Optional[str] = None
+
+
+@app.post("/api/analyze/location")
+def analyze_location(req: LocationRequest):
+    """
+    Run live flood risk analysis for any arbitrary lat/lon on Earth.
+    Combines live detection + ML prediction + GloFAS validation.
+    """
+    lat, lon = req.lat, req.lon
+    name = req.name or f"{lat:.2f}, {lon:.2f}"
+
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Invalid coordinates")
+
+    # 1. Live detection (discharge, rainfall, etc.)
+    detection = analysis_engine.analyze_by_coords(lat, lon, name)
+
+    # 2. ML prediction (GBM + LSTM ensemble)
+    ml_prediction = predictor.predict_by_coords(lat, lon, name)
+
+    # 3. GloFAS validation
+    from processing.live_flood_data import LiveFloodDataFetcher
+    live_fetcher = LiveFloodDataFetcher()
+    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+
+    validation_result = live_fetcher.validate_prediction(
+        lat=lat, lon=lon,
+        our_risk_level=ml_prediction.predicted_risk_level,
+        our_probability=ml_prediction.flood_probability,
+        our_confidence=ml_prediction.confidence,
+    )
+
+    return {
+        "status": "analysis_complete",
+        "location": {"lat": lat, "lon": lon, "name": name},
+        "detection": detection.to_dict(),
+        "prediction": ml_prediction.to_dict(),
+        "validation": validation_result.to_dict(),
+        "discharge_data": discharge.to_dict(),
+    }
+
+
+@app.get("/api/explain/location")
+def explain_location(lat: float = Query(...), lon: float = Query(...)):
+    """
+    Full ML vs GloFAS explainability for any arbitrary coordinates.
+    """
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(status_code=400, detail="Invalid coordinates")
+
+    name = f"{lat:.2f}, {lon:.2f}"
+
+    # 1. Get external factors for these coords
+    factors = external.get_risk_factors_by_coords(lat, lon)
+
+    # 2. Run ML prediction with full explanation (no history for ad-hoc)
+    ml_result = predictor.explain_prediction(
+        flood_history=[],
+        external_factors=factors.to_dict(),
+        region_name=name,
+    )
+
+    # 3. Fetch LIVE GloFAS discharge
+    from processing.live_flood_data import LiveFloodDataFetcher, generate_difference_analysis
+    live_fetcher = LiveFloodDataFetcher()
+    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+
+    # 4. Generate difference analysis
+    comparison = generate_difference_analysis(
+        our_level=ml_result["risk_level"],
+        our_feature_values=ml_result["feature_values"],
+        our_explanation=ml_result["explanation"],
+        glofas_level=discharge.flood_risk_level,
+        discharge_m3s=discharge.current_discharge,
+        anomaly_sigma=discharge.discharge_anomaly,
+        mean_discharge=discharge.mean_discharge,
+    )
+
+    return {
+        "region": {"id": -1, "name": name, "bbox": [lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5]},
+        "ml_prediction": {
+            "risk_level": ml_result["risk_level"],
+            "probability": ml_result["probability"],
+            "confidence": ml_result["confidence"],
+            "class_probabilities": ml_result["class_probabilities"],
+            "feature_values": ml_result["feature_values"],
+            "top_drivers": ml_result["top_drivers"],
+            "explanation": ml_result["explanation"],
+            "model_inputs_source": ml_result["model_inputs_source"],
+        },
+        "glofas_assessment": {
+            "risk_level": discharge.flood_risk_level,
+            "discharge_m3s": round(discharge.current_discharge, 2),
+            "anomaly_sigma": round(discharge.discharge_anomaly, 2),
+            "mean_discharge_m3s": round(discharge.mean_discharge, 2),
+            "explanation": comparison["glofas_explanation"],
+            "historical_discharge": discharge.discharge_m3s[-30:],
+            "historical_dates": discharge.dates[-30:],
+            "forecast_discharge": discharge.forecast_discharge[-7:],
+            "forecast_dates": discharge.forecast_dates[-7:],
+        },
+        "comparison": {
+            "agreement": comparison["agreement"],
+            "agreement_score": comparison["agreement_score"],
+            "summary": comparison["summary"],
+            "difference_reasons": comparison["difference_reasons"],
+            "our_methodology": comparison["our_methodology"],
+            "glofas_methodology": comparison["glofas_methodology"],
+        },
+        "independence_proof": {
+            "model_uses": (
+                "13 weather and terrain features: precipitation, soil moisture, temperature, "
+                "elevation, seasonal month, risk multiplier, historical trends."
+            ),
+            "model_does_not_use": "River discharge data (GloFAS) is NOT an input to the prediction model.",
+            "glofas_uses": f"River discharge measurements from the nearest GloFAS grid cell at ({lat:.2f}, {lon:.2f}).",
+            "how_training_works": (
+                "During training, GloFAS discharge was used ONLY to generate labels. "
+                "The model's input features are exclusively weather and terrain data."
+            ),
+            "verification": "ML prediction is computed FIRST, then GloFAS data is fetched separately for comparison.",
+            "feature_data_sources": {
+                "Open-Meteo Weather API": ["precip_7d", "precip_30d", "max_daily_rain_7d", "precip_anomaly", "soil_moisture", "temperature", "rainfall_mm"],
+                "Open-Meteo Elevation API": ["elevation_m"],
+                "Calendar / Seasonal": ["month", "risk_multiplier"],
+            },
+        },
+    }
+
+
+# --- LSTM Training ---
+
+@app.post("/api/train/lstm")
+def train_lstm_model():
+    """Train the LSTM time-series flood prediction model."""
+    logger.info("=== LSTM TRAINING TRIGGERED ===")
+    try:
+        from processing.lstm_trainer import LSTMDataBuilder
+        from ml.lstm_model import LSTMFloodManager
+
+        builder = LSTMDataBuilder()
+        sequences, labels = builder.build_all_regions()
+
+        if len(sequences) == 0:
+            return {"status": "error", "message": "No training data could be built"}
+
+        manager = LSTMFloodManager()
+        metrics = manager.train(sequences, labels, epochs=30, batch_size=32)
+
+        return {"status": "training_complete", "metrics": metrics}
+    except Exception as e:
+        logger.error("LSTM training failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/train/lstm/metrics")
+def get_lstm_metrics():
+    """Get LSTM model training metrics."""
+    metrics = predictor.get_lstm_metrics()
+    if not metrics:
+        return {"status": "not_trained", "message": "LSTM model has not been trained yet."}
+    return {"status": "ok", "metrics": metrics}
+
+
+# --- U-Net Training ---
+
+@app.post("/api/unet/train")
+def train_unet_model(samples: int = Query(default=200, le=1000), epochs: int = Query(default=20, le=100)):
+    """Train the U-Net flood segmentation model on Sen1Floods11 data."""
+    logger.info("=== U-NET TRAINING TRIGGERED (samples=%d, epochs=%d) ===", samples, epochs)
+    try:
+        from ml.sen1floods11_loader import Sen1Floods11Loader
+        from ml.unet_model import FloodModelManager
+
+        loader = Sen1Floods11Loader()
+        images, masks = loader.load_dataset(max_samples=samples)
+
+        if len(images) == 0:
+            return {"status": "error", "message": "No training data available"}
+
+        manager = FloodModelManager(in_channels=2)
+        metrics = manager.train(images, masks, epochs=epochs, batch_size=8)
+
+        return {
+            "status": "training_complete",
+            "dataset_info": loader.get_dataset_info(),
+            "metrics": metrics,
+        }
+    except Exception as e:
+        logger.error("U-Net training failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/unet/status")
+def get_unet_status():
+    """Get U-Net model status and training metrics."""
+    from config.settings import UNET_MODEL_PATH
+    trained = UNET_MODEL_PATH.exists()
+    return {
+        "status": "trained" if trained else "not_trained",
+        "model_path": str(UNET_MODEL_PATH) if trained else None,
+    }
+
+
 # ─── Catch-all: Serve Next.js static frontend ───
 # MUST be the LAST route so all /api/* routes take precedence
 @app.get("/{full_path:path}")

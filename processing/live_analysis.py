@@ -456,6 +456,30 @@ class LiveAnalysisEngine:
 
         return False, "No alert — conditions within normal range"
 
+    def analyze_by_coords(
+        self,
+        lat: float,
+        lon: float,
+        name: str = None,
+    ) -> LiveDetectionResult:
+        """
+        Run live automated flood risk detection for arbitrary coordinates.
+
+        Enables ad-hoc analysis of any location on Earth without
+        requiring a pre-registered region in the database.
+        """
+        if name is None:
+            name = f"{lat:.2f}, {lon:.2f}"
+
+        # Create a synthetic bbox (0.5 degree radius around point)
+        bbox = [lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5]
+
+        return self.analyze_region(
+            region_id=-1,  # virtual ID for ad-hoc locations
+            region_name=name,
+            bbox=bbox,
+        )
+
     def analyze_all_regions(
         self, regions: list[dict]
     ) -> list[LiveDetectionResult]:
