@@ -1086,7 +1086,7 @@ export default function GeospatialEngine() {
                 )}
 
                 {/* ── Forecast Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-violet-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-violet-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
                       if (!selectedRegion) return;
@@ -1185,7 +1185,7 @@ export default function GeospatialEngine() {
                 </div>
 
                 {/* ── AI Insights Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-amber-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-amber-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
                       if (!selectedRegion) return;
@@ -1262,7 +1262,7 @@ export default function GeospatialEngine() {
                 </div>
 
                 {/* ── Multi-Sensor Fusion Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
                       if (!selectedRegion) return;
@@ -1328,7 +1328,7 @@ export default function GeospatialEngine() {
                 </div>
 
                 {/* ── Compound Risk Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-rose-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-rose-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
                       if (!selectedRegion) return;
@@ -1356,8 +1356,8 @@ export default function GeospatialEngine() {
                             <>
                               <div className="flex items-center gap-2">
                                 <span className={`text-[20px] font-bold font-mono ${compoundData.compound_level === 'CRITICAL' ? 'text-red-400' :
-                                    compoundData.compound_level === 'HIGH' ? 'text-orange-400' :
-                                      compoundData.compound_level === 'MEDIUM' ? 'text-yellow-400' : 'text-emerald-400'
+                                  compoundData.compound_level === 'HIGH' ? 'text-orange-400' :
+                                    compoundData.compound_level === 'MEDIUM' ? 'text-yellow-400' : 'text-emerald-400'
                                   }`}>{(compoundData.compound_score * 100).toFixed(0)}%</span>
                                 <span className="text-[12px] font-mono text-gray-500">{compoundData.compound_level}</span>
                                 {compoundData.cascading_amplification > 1.05 && (
@@ -1401,7 +1401,7 @@ export default function GeospatialEngine() {
                 </div>
 
                 {/* ── Financial Impact Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-emerald-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-emerald-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
                       if (!selectedRegion) return;
@@ -1469,7 +1469,7 @@ export default function GeospatialEngine() {
                 </div>
 
                 {/* ── Model Feedback Panel ── */}
-                <div className="bg-[#0A1628]/80 border border-gray-500/20 rounded-xl overflow-hidden">
+                <div className="bg-[#0A1628]/80 border border-gray-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={() => setShowFeedback(prev => !prev)}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
