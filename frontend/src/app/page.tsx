@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation } from "@/lib/api";
 
 // ─── Types ───
 interface Region {
@@ -316,6 +316,11 @@ export default function GeospatialEngine() {
     setShowFusion(false);
     setShowCompound(false);
     setShowFinancial(false);
+    setForecastData(null);
+    setNlgSummary(null);
+    setShowForecast(false);
+    setShowAiInsights(false);
+    setShowFeedback(false);
 
     if (mapRef.current) {
       mapRef.current.flyTo({ center: [lon, lat], zoom: 6, duration: 1500 });
@@ -647,8 +652,8 @@ export default function GeospatialEngine() {
       <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="absolute left-6 top-28 w-[340px] z-20 flex flex-col gap-4" style={{ bottom: showLogs ? '200px' : '70px' }}>
 
         <div className={`${glassClass} p-5 flex flex-col gap-4`}>
-          <h2 className={`text-[12px] uppercase text-gray-400 ${textMono} tracking-widest`}>Data Source</h2>
-          <div className="flex bg-[#151A22] rounded-lg p-1 border border-white/10 text-xs font-mono">
+          <h2 className={`text-[13px] uppercase text-gray-400 ${textMono} tracking-widest`}>Data Source</h2>
+          <div className="flex bg-[#151A22] rounded-lg p-1 border border-white/10 text-[13px] font-mono">
             {['Sentinel-1', 'Sentinel-2', 'Landsat'].map(s => (
               <button key={s} onClick={() => setActiveSource(s)} className={`flex-1 py-1.5 rounded-md transition-all ${activeSource === s ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-white/80'}`}>{s}</button>
             ))}
@@ -656,7 +661,7 @@ export default function GeospatialEngine() {
         </div>
 
         <div className={`${glassClass} p-5 flex-grow flex flex-col overflow-y-auto`}>
-          <h2 className={`text-[12px] uppercase text-gray-400 ${textMono} tracking-widest mb-4 flex items-center justify-between`}>
+          <h2 className={`text-[13px] uppercase text-gray-400 ${textMono} tracking-widest mb-4 flex items-center justify-between`}>
             Active Region (AOI)
             <ChevronDown size={12} className="text-gray-500" />
           </h2>
@@ -664,7 +669,7 @@ export default function GeospatialEngine() {
           {/* Region List — filtered by search */}
           <div className="flex flex-col gap-1.5 mb-6">
             {filteredRegions.length === 0 && (
-              <div className="text-xs text-gray-500 font-mono p-3">No regions match &quot;{searchQuery}&quot;</div>
+              <div className="text-[13px] text-gray-500 font-mono p-3">No regions match &quot;{searchQuery}&quot;</div>
             )}
             {filteredRegions.map(reg => (
               <div key={reg.id} onClick={() => selectRegion(reg)} className={`p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3
@@ -675,12 +680,12 @@ export default function GeospatialEngine() {
                 }}
               >
                 <MapPin size={14} style={{ color: selectedRegion?.id === reg.id ? primaryColor : '#6b7280' }} />
-                <span className={`text-sm ${textMono} ${selectedRegion?.id === reg.id ? 'text-white' : 'text-gray-400'}`}>{reg.name}</span>
+                <span className={`text-[14px] ${textMono} ${selectedRegion?.id === reg.id ? 'text-white' : 'text-gray-400'}`}>{reg.name}</span>
               </div>
             ))}
           </div>
 
-          <h2 className={`text-[12px] uppercase text-gray-400 ${textMono} tracking-widest mb-4`}>Analysis Orbs</h2>
+          <h2 className={`text-[13px] uppercase text-gray-400 ${textMono} tracking-widest mb-4`}>Analysis Orbs</h2>
           <div className="flex flex-col gap-3">
             {(Object.values(ORB_DEFS) as typeof ORB_DEFS[OrbKey][]).map(orb => {
               const isActive = activeOrb === orb.id;
@@ -701,8 +706,8 @@ export default function GeospatialEngine() {
                     <orb.icon size={14} />
                   </div>
                   <div className="flex flex-col items-start gap-1">
-                    <span className={`text-xs uppercase ${textMono} ${isActive ? 'text-white' : 'text-gray-400'}`}>{orb.label}</span>
-                    {isActive && <div className="text-[10px] font-mono animate-pulse" style={{ color: orb.color }}>Active</div>}
+                    <span className={`text-[13px] uppercase ${textMono} ${isActive ? 'text-white' : 'text-gray-400'}`}>{orb.label}</span>
+                    {isActive && <div className="text-[12px] font-mono animate-pulse" style={{ color: orb.color }}>Active</div>}
                   </div>
                 </button>
               );
@@ -1325,15 +1330,15 @@ export default function GeospatialEngine() {
                               {/* Fusion Weights Breakdown */}
                               {fusionData.fusion_weights && Object.keys(fusionData.fusion_weights).length > 0 && (
                                 <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
-                                  <div className="text-[10px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
-                                  <div className="text-[10px] text-gray-600 font-mono mb-1">How much each sensor contributes — auto-adjusted based on data quality and cloud cover</div>
+                                  <div className="text-[12px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
+                                  <div className="text-[12px] text-gray-600 font-mono mb-1">How much each sensor contributes — auto-adjusted based on data quality and cloud cover</div>
                                   {Object.entries(fusionData.fusion_weights).map(([sensor, weight]) => (
                                     <div key={sensor} className="flex items-center gap-2 mb-1">
-                                      <span className="text-[11px] font-mono text-gray-400 w-16 truncate">{sensor}</span>
+                                      <span className="text-[13px] font-mono text-gray-400 min-w-[140px] shrink-0">{sensor}</span>
                                       <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                                         <div className="h-full rounded-full bg-cyan-400" style={{ width: `${(Number(weight) * 100)}%` }} />
                                       </div>
-                                      <span className="text-[11px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
+                                      <span className="text-[13px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
                                     </div>
                                   ))}
                                 </div>
@@ -1585,6 +1590,11 @@ export default function GeospatialEngine() {
                       <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(adHocData.detection?.detected_risk_level || 'LOW') }}>
                         <AlertTriangle size={16} />
                         {adHocData.detection?.detected_risk_level || 'ANALYZING'} RISK
+                        {adHocData.detection?.change_type && (
+                          <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '40', backgroundColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '20' }}>
+                            LIVE_DETECTION
+                          </span>
+                        )}
                       </span>
                     ) : (
                       <span className={`text-sm uppercase tracking-widest ${textMono} font-bold text-cyan-400 flex items-center gap-2`}>
@@ -1593,13 +1603,12 @@ export default function GeospatialEngine() {
                     )}
                     <span className="text-white text-[15px] font-semibold mt-1">{adHocLocation.name} — {currentOrb.panelTitle}</span>
                   </div>
-                  <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                  <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); setForecastData(null); setNlgSummary(null); setShowForecast(false); setShowAiInsights(false); setFusionData(null); setCompoundData(null); setFinancialData(null); setShowFusion(false); setShowCompound(false); setShowFinancial(false); setShowFeedback(false); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
-
               </div>
 
               {/* Content */}
-              <div className="flex-grow p-6 flex flex-col gap-5 overflow-y-auto">
+              <div className="flex-grow p-6 flex flex-col gap-6 overflow-y-auto">
                 {adHocLoading && (
                   <div className="flex items-center justify-center py-12">
                     <div className="w-10 h-10 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
@@ -1612,7 +1621,50 @@ export default function GeospatialEngine() {
                   const val = adHocData.validation;
                   return (
                     <>
-                      {/* Prediction */}
+                      {/* Data Grid — matches active region */}
+                      {det && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
+                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
+                            <span className={`text-xl font-bold ${textMono} text-white`}>{det.flood_area_km2?.toFixed(1) || '—'} <span className="text-sm text-gray-500">km²</span></span>
+                          </div>
+                          <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
+                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Confidence</span>
+                            <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{(det.confidence_score * 100).toFixed(0)}%</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Assessment Details — matches active region */}
+                      {det && (
+                        <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                          <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
+                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
+                            <span className="text-gray-300">{currentOrb.metricLabel}</span>
+                            <span style={{ color: riskColor(det.detected_risk_level) }}>{det.flood_probability ? (det.flood_probability * 100).toFixed(1) : '0.0'}%</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
+                            <span className="text-gray-300">River Discharge</span>
+                            <span className="text-cyan-400">{det.river_discharge_m3s} m³/s</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
+                            <span className="text-gray-300">Discharge Anomaly</span>
+                            <span className={det.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : det.discharge_anomaly_sigma > 0.8 ? 'text-yellow-400' : 'text-emerald-400'}>
+                              {det.discharge_anomaly_sigma > 0 ? '+' : ''}{det.discharge_anomaly_sigma}σ
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
+                            <span className="text-gray-300">Data Source</span>
+                            <span className="text-gray-400">{activeSource}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-[14px] font-mono">
+                            <span className="text-gray-300">Last Analyzed</span>
+                            <span className="text-gray-400">{det.timestamp ? new Date(det.timestamp).toLocaleDateString() : 'Just now'}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ML Prediction */}
                       {pred && (
                         <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: riskColor(pred.predicted_risk_level) + '30' }}>
                           <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
@@ -1636,7 +1688,7 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
-                      {/* Live Detection */}
+                      {/* Automated Detection */}
                       {det && (
                         <div className="bg-[#0A1628]/90 border rounded-xl p-4 flex flex-col gap-3" style={{ borderColor: riskColor(det.detected_risk_level) + '40' }}>
                           <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
@@ -1671,7 +1723,7 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
-                      {/* Validation */}
+                      {/* GloFAS Validation */}
                       {val && (
                         <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: val.agreement ? '#22c55e30' : '#ef444430' }}>
                           <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
@@ -1694,7 +1746,7 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
-                      {/* Explainability Button */}
+                      {/* ML vs GloFAS Explainability Button */}
                       <button
                         onClick={async () => {
                           if (!adHocLocation || explainLoading) return;
@@ -1730,6 +1782,7 @@ export default function GeospatialEngine() {
                                     {ml.risk_level}
                                   </span>
                                   <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>Prob: <b className="text-white">{(ml.probability * 100).toFixed(0)}%</b></div>
+                                  <div className={`text-[12px] text-violet-400/60 ${textMono} mt-1`}>Weather + Terrain</div>
                                 </div>
                                 <div className="bg-[#151A22] border border-cyan-500/20 rounded-lg p-3 text-center">
                                   <div className={`text-[12px] text-gray-500 uppercase ${textMono} mb-1`}>GloFAS Ground Truth</div>
@@ -1737,6 +1790,7 @@ export default function GeospatialEngine() {
                                     {gf.risk_level}
                                   </span>
                                   <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>Discharge: <b className="text-cyan-400">{gf.discharge_m3s} m³/s</b></div>
+                                  <div className={`text-[12px] text-cyan-400/60 ${textMono} mt-1`}>River Discharge</div>
                                 </div>
                               </div>
                               <div className="flex items-center justify-center gap-2 py-1">
@@ -1764,7 +1818,7 @@ export default function GeospatialEngine() {
                               ))}
                             </div>
 
-                            {/* Top factors */}
+                            {/* All Contributing Factors */}
                             <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
                               <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>All Contributing Factors</span>
                               <span className="text-[11px] text-gray-600 font-mono -mt-1">
@@ -1786,217 +1840,463 @@ export default function GeospatialEngine() {
                           </>
                         );
                       })()}
+
+                      {/* ── 6-Month Forecast Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-violet-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={async () => {
+                            if (!adHocLocation) return;
+                            setShowForecast(prev => !prev);
+                            if (!forecastData && !forecastLoading) {
+                              setForecastLoading(true);
+                              const data = await forecastLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                              if (data && !('error' in data)) setForecastData(data);
+                              setForecastLoading(false);
+                            }
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
+                            <TrendingUp size={14} className="text-violet-400" /> 6-Month Forecast
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showForecast && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-3">
+                                {forecastLoading && (
+                                  <div className="flex items-center justify-center py-8">
+                                    <div className="w-8 h-8 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
+                                  </div>
+                                )}
+                                {forecastData && !forecastLoading && (
+                                  <>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`text-[12px] font-mono px-2.5 py-1 rounded-full border ${forecastData.summary.overall_trend === 'escalating' ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                        : forecastData.summary.overall_trend === 'declining' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                          : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
+                                        }`}>
+                                        Trend: {forecastData.summary.overall_trend.toUpperCase()}
+                                      </span>
+                                      <span className="text-[12px] font-mono text-gray-500">
+                                        Peak: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
+                                      </span>
+                                    </div>
+                                    <div className="h-[140px]">
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={forecastData.monthly_forecast.map(m => ({
+                                          month: m.month_name.split(' ')[0].slice(0, 3),
+                                          risk: Math.round(m.risk_probability * 100),
+                                        }))}>
+                                          <defs>
+                                            <linearGradient id="forecastGradAdhoc" x1="0" y1="0" x2="0" y2="1">
+                                              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
+                                              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                            </linearGradient>
+                                          </defs>
+                                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                          <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
+                                          <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} unit="%" />
+                                          <RechartsTooltip
+                                            contentStyle={{ background: '#0A1628', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8, fontSize: 12 }}
+                                            formatter={(value: number | string | undefined) => [`${value ?? 0}%`, 'Risk']}
+                                          />
+                                          <Area type="monotone" dataKey="risk" stroke="#8b5cf6" fill="url(#forecastGradAdhoc)" strokeWidth={2.5} dot={{ r: 3, fill: '#8b5cf6' }} />
+                                        </AreaChart>
+                                      </ResponsiveContainer>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {forecastData.monthly_forecast.slice(0, 6).map(m => (
+                                        <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
+                                          <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
+                                          <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: m.risk_level === 'CRITICAL' ? '#ef4444' : m.risk_level === 'HIGH' ? '#f59e0b' : m.risk_level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
+                                            {(m.risk_probability * 100).toFixed(0)}%
+                                          </div>
+                                          <div className="text-[10px] text-gray-600 font-mono">{m.risk_level}</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── AI Insights Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-amber-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={async () => {
+                            if (!adHocLocation) return;
+                            setShowAiInsights(prev => !prev);
+                            if (!nlgSummary && !nlgLoading) {
+                              setNlgLoading(true);
+                              const data = await nlgSummaryLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                              if (data && !('error' in data)) setNlgSummary(data);
+                              setNlgLoading(false);
+                            }
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-amber-300 flex items-center gap-2`}>
+                            <Sparkles size={14} className="text-amber-400" /> AI Insights
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showAiInsights ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showAiInsights && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-3">
+                                {nlgLoading && (
+                                  <div className="flex items-center justify-center py-8">
+                                    <div className="w-8 h-8 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                                  </div>
+                                )}
+                                {nlgSummary && !nlgLoading && (
+                                  <>
+                                    <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line">
+                                      {nlgSummary.narrative.split('**').map((part, i) =>
+                                        i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                      {nlgSummary.highlights.map((h, i) => (
+                                        <div key={i} className="flex items-start gap-2 text-[12px] font-mono text-gray-400">
+                                          <span className="text-amber-400 mt-0.5">▸</span>
+                                          {h}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {nlgSummary.trend_narrative && (
+                                      <div className="bg-[#151A22] rounded-lg p-3 border border-white/5">
+                                        <div className="text-[12px] text-gray-300 leading-relaxed font-sans">
+                                          {nlgSummary.trend_narrative.split('**').map((part, i) =>
+                                            i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2 text-[11px] text-gray-600 font-mono">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] border ${nlgSummary.engine === 'gpt-4o-mini' ? 'border-emerald-500/30 text-emerald-400' : 'border-gray-600 text-gray-500'}`}>
+                                        {nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4' : '⚙ Template'}
+                                      </span>
+                                      <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── Sensor Fusion Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={async () => {
+                            if (!adHocLocation) return;
+                            setShowFusion(prev => !prev);
+                            if (!fusionData && !fusionLoading) {
+                              setFusionLoading(true);
+                              const data = await fusionLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                              if (data && !('error' in data)) setFusionData(data);
+                              setFusionLoading(false);
+                            }
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                            <Radio size={14} className="text-cyan-400" /> Sensor Fusion
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showFusion && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-2.5">
+                                <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
+                                  Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting — unlike single-source analysis, this fuses all satellite sources for robust flood detection even through cloud cover.
+                                </div>
+                                {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
+                                {fusionData && !fusionLoading && (
+                                  <>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[
+                                        { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF', desc: 'Combined multi-sensor flood likelihood' },
+                                        { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80', desc: 'Vegetation health anomaly from optical' },
+                                        { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc', desc: 'Ground water saturation from weather' },
+                                        { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage from SAR' },
+                                        { label: 'Quality', value: fusionData.quality_score, color: '#facc15', desc: 'Overall data reliability score' },
+                                      ].map(s => (
+                                        <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5" title={s.desc}>
+                                          <div className="text-[10px] text-gray-500 font-mono">{s.label}</div>
+                                          <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                              <div className="h-full rounded-full" style={{ width: `${(s.value * 100)}%`, backgroundColor: s.color }} />
+                                            </div>
+                                            <span className="text-[11px] font-mono text-gray-400">{(s.value * 100).toFixed(0)}%</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {fusionData.fusion_weights && Object.keys(fusionData.fusion_weights).length > 0 && (
+                                      <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
+                                        <div className="text-[12px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
+                                        <div className="text-[12px] text-gray-600 font-mono mb-1">How much each sensor contributes — auto-adjusted based on data quality and cloud cover</div>
+                                        {Object.entries(fusionData.fusion_weights).map(([sensor, weight]) => (
+                                          <div key={sensor} className="flex items-center gap-2 mb-1">
+                                            <span className="text-[13px] font-mono text-gray-400 min-w-[140px] shrink-0">{sensor}</span>
+                                            <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                              <div className="h-full rounded-full bg-cyan-400" style={{ width: `${(Number(weight) * 100)}%` }} />
+                                            </div>
+                                            <span className="text-[13px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {fusionData.cloud_penetration_used && (
+                                      <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1.5">
+                                        <Radio size={10} /> SAR cloud-penetration active — optical blocked by clouds, SAR enables analysis
+                                      </div>
+                                    )}
+                                    <div className="text-[10px] font-mono text-gray-600">
+                                      Sensors: {fusionData.sensors_fused?.join(', ')}
+                                    </div>
+                                    {fusionData.thermal_anomaly !== 0 && (
+                                      <div className="text-[11px] font-mono text-gray-500">
+                                        Thermal: {fusionData.thermal_anomaly > 0 ? '+' : ''}{fusionData.thermal_anomaly?.toFixed(1)}°C anomaly — {fusionData.thermal_anomaly > 2 ? 'significant heat stress detected' : fusionData.thermal_anomaly < -2 ? 'cooling anomaly detected' : 'within normal range'}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── Compound Risk Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-rose-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={async () => {
+                            if (!adHocLocation) return;
+                            setShowCompound(prev => !prev);
+                            if (!compoundData && !compoundLoading) {
+                              setCompoundLoading(true);
+                              const data = await compoundRiskLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                              if (data && !('error' in data)) setCompoundData(data);
+                              setCompoundLoading(false);
+                            }
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
+                            <Shield size={14} className="text-rose-400" /> Compound Risk
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showCompound ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showCompound && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-2.5">
+                                {compoundLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-rose-400/30 border-t-rose-400 rounded-full animate-spin" /></div>}
+                                {compoundData && !compoundLoading && (
+                                  <>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[20px] font-bold font-mono ${compoundData.compound_level === 'CRITICAL' ? 'text-red-400' :
+                                        compoundData.compound_level === 'HIGH' ? 'text-orange-400' :
+                                          compoundData.compound_level === 'MEDIUM' ? 'text-yellow-400' : 'text-emerald-400'
+                                        }`}>{(compoundData.compound_score * 100).toFixed(0)}%</span>
+                                      <span className="text-[12px] font-mono text-gray-500">{compoundData.compound_level}</span>
+                                      {compoundData.cascading_amplification > 1.05 && (
+                                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 bg-red-500/10">
+                                          ×{compoundData.cascading_amplification.toFixed(2)} cascade
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      {compoundData.hazard_layers?.map((h: { name: string; severity: number; status: string; description: string }) => (
+                                        <div key={h.name} className="flex items-center gap-2">
+                                          <div className={`w-1.5 h-1.5 rounded-full ${h.status === 'active' ? 'bg-red-400' : h.status === 'warning' ? 'bg-yellow-400' : 'bg-gray-600'}`} />
+                                          <span className="text-[11px] font-mono text-gray-400 flex-1">{h.name.replace('_', ' ')}</span>
+                                          <span className="text-[11px] font-mono text-gray-500">{(h.severity * 100).toFixed(0)}%</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {compoundData.interaction_effects?.length > 0 && (
+                                      <div className="bg-[#151A22] rounded-lg p-2 border border-white/5">
+                                        <div className="text-[10px] text-gray-500 font-mono mb-1">INTERACTIONS</div>
+                                        {compoundData.interaction_effects.map((ie: { effect: string; amplification: number }, i: number) => (
+                                          <div key={i} className="text-[11px] text-rose-300 font-mono">⚡ {ie.effect}</div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {compoundData.recommendations?.length > 0 && (
+                                      <div className="flex flex-col gap-1 mt-1">
+                                        {compoundData.recommendations.slice(0, 3).map((r: string, i: number) => (
+                                          <div key={i} className="text-[11px] text-gray-400 flex gap-1.5 items-start">
+                                            <span className="text-rose-400">→</span> {r}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── Financial Impact Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-emerald-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={async () => {
+                            if (!adHocLocation) return;
+                            setShowFinancial(prev => !prev);
+                            if (!financialData && !financialLoading) {
+                              setFinancialLoading(true);
+                              const data = await financialImpactLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                              if (data && !('error' in data)) setFinancialData(data);
+                              setFinancialLoading(false);
+                            }
+                          }}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
+                            <DollarSign size={14} className="text-emerald-400" /> Financial Impact
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFinancial ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showFinancial && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-2.5">
+                                {financialLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /></div>}
+                                {financialData && !financialLoading && (
+                                  <>
+                                    <div className="text-center">
+                                      <div className="text-[10px] text-gray-500 font-mono">TOTAL EXPOSURE</div>
+                                      <div className="text-[22px] font-bold font-mono text-emerald-400">
+                                        ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {[
+                                        { label: 'Direct', value: financialData.direct_damage_usd },
+                                        { label: 'Indirect', value: financialData.indirect_costs_usd },
+                                        { label: 'Recovery', value: financialData.recovery_cost_usd },
+                                      ].map(m => (
+                                        <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
+                                          <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
+                                          <div className="text-[12px] font-mono text-gray-300">${(m.value / 1000).toFixed(0)}K</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
+                                      <span>🏥 {financialData.affected_population?.toLocaleString()} affected</span>
+                                      <span>📊 GDP: {financialData.gdp_impact_pct?.toFixed(3)}%</span>
+                                    </div>
+                                    {financialData.mitigation_roi?.length > 0 && (
+                                      <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
+                                        <div className="text-[10px] text-gray-500 font-mono mb-1.5">MITIGATION ROI</div>
+                                        {financialData.mitigation_roi.slice(0, 3).map((m: { measure: string; roi_pct: number }, i: number) => (
+                                          <div key={i} className="flex items-center justify-between text-[11px] font-mono">
+                                            <span className="text-gray-400">{m.measure}</span>
+                                            <span className={m.roi_pct > 200 ? 'text-emerald-400' : 'text-yellow-400'}>{m.roi_pct}% ROI</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      {/* ── Model Feedback Panel (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-gray-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={() => setShowFeedback(prev => !prev)}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-gray-400 flex items-center gap-2`}>
+                            <ThumbsUp size={14} className="text-gray-500" /> Model Feedback
+                          </span>
+                          <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFeedback ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                          {showFeedback && (
+                            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 flex flex-col gap-3">
+                                <div className="text-[12px] text-gray-500 font-mono">
+                                  Was the flood detection for {adHocLocation.name} accurate?
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={async () => {
+                                      await submitFeedback({
+                                        detection_type: 'flood',
+                                        model_prediction: pred?.predicted_risk_level || det?.detected_risk_level || 'UNKNOWN',
+                                        user_verdict: 'correct',
+                                        location: { lat: adHocLocation.lat, lon: adHocLocation.lon, name: adHocLocation.name },
+                                      });
+                                      setShowFeedback(false);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-[12px] font-mono text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                                  >
+                                    <ThumbsUp size={12} /> Correct
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      await submitFeedback({
+                                        detection_type: 'flood',
+                                        model_prediction: pred?.predicted_risk_level || det?.detected_risk_level || 'UNKNOWN',
+                                        user_verdict: 'incorrect',
+                                        location: { lat: adHocLocation.lat, lon: adHocLocation.lon, name: adHocLocation.name },
+                                      });
+                                      setShowFeedback(false);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-500/10 border border-red-500/30 rounded-lg text-[12px] font-mono text-red-400 hover:bg-red-500/20 transition-colors"
+                                  >
+                                    <ThumbsDown size={12} /> Incorrect
+                                  </button>
+                                </div>
+                                <div className="text-[10px] text-gray-600 font-mono">
+                                  Feedback improves model accuracy through continuous learning
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     </>
                   );
                 })()}
 
-                {/* ── Multi-Sensor Fusion Panel (Ad-Hoc) ── */}
-                {adHocData && !adHocLoading && (
-                  <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
-                    <button
-                      onClick={async () => {
-                        if (!adHocLocation) return;
-                        setShowFusion(prev => !prev);
-                        if (!fusionData && !fusionLoading) {
-                          setFusionLoading(true);
-                          const data = await fusionLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
-                          if (data && !('error' in data)) setFusionData(data);
-                          setFusionLoading(false);
-                        }
-                      }}
-                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-                    >
-                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
-                        <Radio size={14} className="text-cyan-400" /> Sensor Fusion
-                      </span>
-                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
-                    </button>
-                    <AnimatePresence>
-                      {showFusion && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                          <div className="px-4 pb-4 flex flex-col gap-2.5">
-                            <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
-                              Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting.
-                            </div>
-                            {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
-                            {fusionData && !fusionLoading && (
-                              <>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {[
-                                    { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF' },
-                                    { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80' },
-                                    { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc' },
-                                    { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8' },
-                                    { label: 'Quality', value: fusionData.quality_score, color: '#facc15' },
-                                  ].map(s => (
-                                    <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5">
-                                      <div className="text-[10px] text-gray-500 font-mono">{s.label}</div>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                                          <div className="h-full rounded-full" style={{ width: `${(s.value * 100)}%`, backgroundColor: s.color }} />
-                                        </div>
-                                        <span className="text-[11px] font-mono text-gray-400">{(s.value * 100).toFixed(0)}%</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                                {fusionData.fusion_weights && Object.keys(fusionData.fusion_weights).length > 0 && (
-                                  <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
-                                    <div className="text-[10px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
-                                    {Object.entries(fusionData.fusion_weights).map(([sensor, weight]) => (
-                                      <div key={sensor} className="flex items-center gap-2 mb-1">
-                                        <span className="text-[11px] font-mono text-gray-400 w-16 truncate">{sensor}</span>
-                                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                                          <div className="h-full rounded-full bg-cyan-400" style={{ width: `${(Number(weight) * 100)}%` }} />
-                                        </div>
-                                        <span className="text-[11px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                <div className="text-[10px] font-mono text-gray-600">
-                                  Sensors: {fusionData.sensors_fused?.join(', ')}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
+              </div>
 
-                {/* ── Compound Risk Panel (Ad-Hoc) ── */}
-                {adHocData && !adHocLoading && (
-                  <div className="bg-[#0A1628]/80 border border-rose-500/20 rounded-xl overflow-hidden shrink-0">
-                    <button
-                      onClick={async () => {
-                        if (!adHocLocation) return;
-                        setShowCompound(prev => !prev);
-                        if (!compoundData && !compoundLoading) {
-                          setCompoundLoading(true);
-                          const data = await compoundRiskLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
-                          if (data && !('error' in data)) setCompoundData(data);
-                          setCompoundLoading(false);
-                        }
-                      }}
-                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-                    >
-                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
-                        <Shield size={14} className="text-rose-400" /> Compound Risk
-                      </span>
-                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showCompound ? 'rotate-90' : ''}`} />
-                    </button>
-                    <AnimatePresence>
-                      {showCompound && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                          <div className="px-4 pb-4 flex flex-col gap-2.5">
-                            {compoundLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-rose-400/30 border-t-rose-400 rounded-full animate-spin" /></div>}
-                            {compoundData && !compoundLoading && (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[20px] font-bold font-mono ${compoundData.compound_level === 'CRITICAL' ? 'text-red-400' :
-                                    compoundData.compound_level === 'HIGH' ? 'text-orange-400' :
-                                      compoundData.compound_level === 'MEDIUM' ? 'text-yellow-400' : 'text-emerald-400'
-                                    }`}>{(compoundData.compound_score * 100).toFixed(0)}%</span>
-                                  <span className="text-[12px] font-mono text-gray-500">{compoundData.compound_level}</span>
-                                  {compoundData.cascading_amplification > 1.05 && (
-                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 bg-red-500/10">
-                                      ×{compoundData.cascading_amplification.toFixed(2)} cascade
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  {compoundData.hazard_layers?.map((h: { name: string; severity: number; status: string }) => (
-                                    <div key={h.name} className="flex items-center gap-2">
-                                      <div className={`w-1.5 h-1.5 rounded-full ${h.status === 'active' ? 'bg-red-400' : h.status === 'warning' ? 'bg-yellow-400' : 'bg-gray-600'}`} />
-                                      <span className="text-[11px] font-mono text-gray-400 flex-1">{h.name.replace('_', ' ')}</span>
-                                      <span className="text-[11px] font-mono text-gray-500">{(h.severity * 100).toFixed(0)}%</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                {compoundData.recommendations?.length > 0 && (
-                                  <div className="flex flex-col gap-1 mt-1">
-                                    {compoundData.recommendations.slice(0, 3).map((r: string, i: number) => (
-                                      <div key={i} className="text-[11px] text-gray-400 flex gap-1.5 items-start">
-                                        <span className="text-rose-400">→</span> {r}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
-                {/* ── Financial Impact Panel (Ad-Hoc) ── */}
-                {adHocData && !adHocLoading && (
-                  <div className="bg-[#0A1628]/80 border border-emerald-500/20 rounded-xl overflow-hidden shrink-0">
-                    <button
-                      onClick={async () => {
-                        if (!adHocLocation) return;
-                        setShowFinancial(prev => !prev);
-                        if (!financialData && !financialLoading) {
-                          setFinancialLoading(true);
-                          const data = await financialImpactLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
-                          if (data && !('error' in data)) setFinancialData(data);
-                          setFinancialLoading(false);
-                        }
-                      }}
-                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
-                    >
-                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
-                        <DollarSign size={14} className="text-emerald-400" /> Financial Impact
-                      </span>
-                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFinancial ? 'rotate-90' : ''}`} />
-                    </button>
-                    <AnimatePresence>
-                      {showFinancial && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                          <div className="px-4 pb-4 flex flex-col gap-2.5">
-                            {financialLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /></div>}
-                            {financialData && !financialLoading && (
-                              <>
-                                <div className="text-center">
-                                  <div className="text-[10px] text-gray-500 font-mono">TOTAL EXPOSURE</div>
-                                  <div className="text-[22px] font-bold font-mono text-emerald-400">
-                                    ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                  {[
-                                    { label: 'Direct', value: financialData.direct_damage_usd },
-                                    { label: 'Indirect', value: financialData.indirect_costs_usd },
-                                    { label: 'Recovery', value: financialData.recovery_cost_usd },
-                                  ].map(m => (
-                                    <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
-                                      <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
-                                      <div className="text-[12px] font-mono text-gray-300">${(m.value / 1000).toFixed(0)}K</div>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
-                                  <span>🏥 {financialData.affected_population?.toLocaleString()} affected</span>
-                                  <span>📊 GDP: {financialData.gdp_impact_pct?.toFixed(3)}%</span>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
+              {/* Download Action */}
+              <div className="p-6 border-t border-white/10 bg-black/20">
+                <button
+                  onClick={() => {
+                    const reportUrl = `/api/reports/executive/0?lat=${adHocLocation.lat}&lon=${adHocLocation.lon}&name=${encodeURIComponent(adHocLocation.name)}`;
+                    window.open(reportUrl, '_blank');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[13px] uppercase tracking-widest border border-white/10 hover:border-[#00E5FF]/40 rounded-lg transition-colors group"
+                >
+                  <Download size={14} className="text-gray-400 group-hover:text-[#00E5FF]" /> Download Structured Report
+                </button>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
 
       {/* ═══ D. TIME-SERIES (BOTTOM CENTER) ═══ */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`absolute left-[390px] right-[430px] bottom-6 h-[180px] z-20 ${glassClass} flex flex-col overflow-hidden`}>

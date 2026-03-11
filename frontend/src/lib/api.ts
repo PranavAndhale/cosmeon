@@ -162,6 +162,19 @@ export async function fetchNLGSummary(regionId: number): Promise<NLGSummary | nu
     return safeFetch(`${API}/nlg/summary/${regionId}`);
 }
 
+export async function nlgSummaryLocation(lat: number, lon: number, name?: string): Promise<NLGSummary | null> {
+    try {
+        const res = await fetch(`${API}/nlg/summary/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
 // --- Multi-Sensor Fusion (Phase 2A) ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchFusionAnalysis(regionId: number): Promise<any> {

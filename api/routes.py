@@ -935,6 +935,69 @@ def get_nlg_summary(region_id: int):
         return {"error": str(e)}
 
 
+@app.post("/api/nlg/summary/location")
+def get_nlg_summary_location(body: LocationRequest):
+    """Generate an AI-powered narrative summary for an arbitrary location."""
+    try:
+        lat, lon = body.lat, body.lon
+        name = body.name or f"{lat:.2f}, {lon:.2f}"
+
+        # Get live detection data
+        detection_data = None
+        try:
+            det = analysis_engine.analyze_by_coords(lat, lon, name)
+            detection_data = det.to_dict() if det else None
+        except Exception:
+            pass
+
+        # Get ML prediction
+        prediction_data = None
+        try:
+            pred = predictor.predict_by_coords(lat, lon, name)
+            prediction_data = pred.to_dict() if pred else None
+        except Exception:
+            pass
+
+        # Get GloFAS validation
+        validation_data = None
+        try:
+            from processing.live_flood_data import LiveFloodDataFetcher
+            live_fetcher = LiveFloodDataFetcher()
+            val = live_fetcher.validate_prediction(
+                lat=lat, lon=lon,
+                our_risk_level=prediction_data.get("predicted_risk_level", "UNKNOWN") if prediction_data else "UNKNOWN",
+                our_probability=prediction_data.get("flood_probability", 0) if prediction_data else 0,
+                our_confidence=prediction_data.get("confidence", 0) if prediction_data else 0,
+            )
+            validation_data = val.to_dict() if val else None
+        except Exception:
+            pass
+
+        # Build risk_data from detection
+        risk_data = {
+            "risk_level": detection_data.get("detected_risk_level", "UNKNOWN") if detection_data else "UNKNOWN",
+            "flood_percentage": detection_data.get("flood_probability", 0) if detection_data else 0,
+            "confidence_score": detection_data.get("confidence_score", 0) if detection_data else 0,
+            "flood_area_km2": 0,
+            "total_area_km2": 0,
+        }
+
+        engine = _get_nlg_engine()
+        result = engine.generate_executive_summary(
+            region_name=name,
+            risk_data=risk_data,
+            prediction_data=prediction_data,
+            detection_data=detection_data,
+            validation_data=validation_data,
+        )
+
+        return result
+
+    except Exception as e:
+        logger.exception("NLG summary (location) failed")
+        return {"error": str(e)}
+
+
 # --- Predictive Forecasting ---
 
 _forecast_engine = None
