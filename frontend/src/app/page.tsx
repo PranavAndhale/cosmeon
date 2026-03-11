@@ -323,18 +323,24 @@ export default function GeospatialEngine() {
       setGeoResults([]);
       return;
     }
-    // Don't geocode if it matches an existing region exactly
-    const matchesRegion = regions.some(r => r.name.toLowerCase().includes(q.toLowerCase()));
-    if (matchesRegion && q.length < 4) {
-      setGeoResults([]);
-      return;
+    // Skip geocoding only if short query exactly matches a monitored region
+    if (q.length < 3) {
+      const matchesRegion = regions.some(r => r.name.toLowerCase().includes(q.toLowerCase()));
+      if (matchesRegion) {
+        setGeoResults([]);
+        return;
+      }
     }
     // Debounce: wait 350ms after last keystroke
     if (geoTimerRef.current) clearTimeout(geoTimerRef.current);
+    setGeoLoading(true); // show loading state immediately
     geoTimerRef.current = setTimeout(async () => {
-      setGeoLoading(true);
-      const results = await geocodeSearch(q);
-      setGeoResults(results);
+      try {
+        const results = await geocodeSearch(q);
+        setGeoResults(results);
+      } catch {
+        setGeoResults([]);
+      }
       setGeoLoading(false);
     }, 350);
     return () => { if (geoTimerRef.current) clearTimeout(geoTimerRef.current); };
@@ -620,7 +626,7 @@ export default function GeospatialEngine() {
             </div>
             {/* Search Dropdown */}
             <AnimatePresence>
-              {searchQuery && searchFocused && (filteredRegions.length > 0 || parsedCoords || geoResults.length > 0 || geoLoading) && (
+              {searchQuery && searchFocused && (filteredRegions.length > 0 || parsedCoords || geoResults.length > 0 || geoLoading || searchQuery.trim().length >= 2) && (
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -690,6 +696,10 @@ export default function GeospatialEngine() {
                         );
                       })}
                     </>
+                  )}
+                  {/* No results fallback */}
+                  {!geoLoading && geoResults.length === 0 && filteredRegions.length === 0 && !parsedCoords && searchQuery.trim().length >= 2 && (
+                    <div className={`px-4 py-3 text-[13px] ${textMono} text-gray-500`}>No regions match &quot;{searchQuery}&quot;</div>
                   )}
                 </motion.div>
               )}
