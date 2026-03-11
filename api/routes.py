@@ -1140,22 +1140,26 @@ def get_compound_risk(region_id: int):
 def compound_risk_location(body: LocationRequest):
     """Compute compound multi-hazard risk for arbitrary coordinates."""
     try:
-        import math
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
-        fusion = _get_fusion().fuse_sensors(lat, lon, name)
+        # Use live detection for accurate flood probability
+        detection = analysis_engine.analyze_by_coords(lat, lon, name)
+        flood_prob = detection.flood_probability
+        confidence = detection.confidence_score
         from processing.external_data import ExternalDataIntegrator
         ext = ExternalDataIntegrator()
         rainfall = ext.fetch_rainfall(lat, lon, days=7)
         elevation = ext.fetch_elevation(lat, lon)
-        # Estimate flood probability from fusion data
-        flood_prob = fusion.flood_confidence
+        # Derive secondary factors from detection data
+        vegetation_stress = max(0.1, min(flood_prob * 0.8, 1.0))
+        thermal_anomaly = detection.rainfall_7d_mm > 100
+        soil_saturation = min(1.0, (detection.rainfall_7d_mm / 200) + (flood_prob * 0.3))
         result = _get_compound().compute_compound_risk(
             flood_probability=flood_prob,
-            flood_confidence=fusion.flood_confidence,
-            vegetation_stress=fusion.vegetation_stress,
-            thermal_anomaly=fusion.thermal_anomaly,
-            soil_saturation=fusion.soil_saturation,
+            flood_confidence=confidence,
+            vegetation_stress=vegetation_stress,
+            thermal_anomaly=thermal_anomaly,
+            soil_saturation=soil_saturation,
             rainfall_7d_mm=rainfall.get("total_rainfall_mm", 0),
             elevation_m=elevation.get("mean_elevation_m", 100),
             region_name=name,
@@ -1248,16 +1252,14 @@ def get_financial_impact(region_id: int):
 def financial_impact_location(body: LocationRequest):
     """Estimate financial impact for arbitrary coordinates."""
     try:
-        import math
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
-        # Compute area from a ~1 degree bbox around the point
-        total_area = 111.0 * 111.0 * math.cos(math.radians(lat))  # ~1°x1° area
-        # Get fusion-based flood estimate
-        fusion = _get_fusion().fuse_sensors(lat, lon, name)
-        flood_prob = fusion.flood_confidence
-        flood_area = total_area * flood_prob
-        risk_level = "CRITICAL" if flood_prob > 0.6 else "HIGH" if flood_prob > 0.3 else "MEDIUM" if flood_prob > 0.1 else "LOW"
+        # Use the live analysis detection which has proper flood probability
+        detection = analysis_engine.analyze_by_coords(lat, lon, name)
+        flood_prob = detection.flood_probability
+        total_area = detection.total_area_km2
+        flood_area = detection.flood_area_km2
+        risk_level = detection.detected_risk_level
         result = _get_financial().estimate_impact(
             risk_level=risk_level,
             flood_area_km2=flood_area,

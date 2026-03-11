@@ -52,6 +52,10 @@ class LiveDetectionResult:
     # Alert
     alert_triggered: bool
     alert_message: str
+    # Area
+    flood_area_km2: float = 0.0
+    total_area_km2: float = 0.0
+    change_type: str = "LIVE_DETECTION"
     # Forecast
     discharge_forecast: list[float] = field(default_factory=list)
     forecast_dates: list[str] = field(default_factory=list)
@@ -83,6 +87,9 @@ class LiveDetectionResult:
             "risk_factors": self.risk_factors,
             "alert_triggered": self.alert_triggered,
             "alert_message": self.alert_message,
+            "flood_area_km2": round(self.flood_area_km2, 2),
+            "total_area_km2": round(self.total_area_km2, 2),
+            "change_type": self.change_type,
             "discharge_forecast": [round(d, 2) for d in self.discharge_forecast],
             "forecast_dates": self.forecast_dates,
             "rainfall_forecast_daily": [round(r, 1) for r in self.rainfall_forecast_daily],
@@ -156,9 +163,16 @@ class LiveAnalysisEngine:
         Returns:
             LiveDetectionResult with all detection outputs
         """
+        import math
         lat = (bbox[1] + bbox[3]) / 2
         lon = (bbox[0] + bbox[2]) / 2
         timestamp = datetime.utcnow().isoformat()
+        # Compute area from bounding box geometry
+        lat_diff = abs(bbox[3] - bbox[1])
+        lon_diff = abs(bbox[2] - bbox[0])
+        km_per_deg_lat = 111.0
+        km_per_deg_lon = 111.0 * math.cos(math.radians(lat))
+        total_area_km2 = lat_diff * km_per_deg_lat * lon_diff * km_per_deg_lon
 
         logger.info(
             "=== LIVE ANALYSIS: %s (lat=%.2f, lon=%.2f) ===",
@@ -242,6 +256,8 @@ class LiveAnalysisEngine:
             discharge_forecast=discharge.forecast_discharge,
             forecast_dates=discharge.forecast_dates,
             rainfall_forecast_daily=forecast_precip,
+            flood_area_km2=round(total_area_km2 * probability, 2),
+            total_area_km2=round(total_area_km2, 2),
         )
 
         # Cache latest detection
