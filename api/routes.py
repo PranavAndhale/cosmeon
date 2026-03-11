@@ -963,7 +963,7 @@ def get_forecast(region_id: int, horizon: int = Query(6, ge=1, le=12)):
 
 
 @app.post("/api/forecast/location")
-def forecast_location(body: LocationAnalysisRequest):
+def forecast_location(body: LocationRequest):
     """Generate a forecast for arbitrary coordinates."""
     try:
         engine = _get_forecast_engine()
@@ -1008,7 +1008,7 @@ def get_fusion_analysis(region_id: int):
 
 
 @app.post("/api/fusion/location")
-def fusion_location(body: LocationAnalysisRequest):
+def fusion_location(body: LocationRequest):
     """Multi-sensor fusion for arbitrary coordinates."""
     try:
         result = _get_fusion().fuse_sensors(body.lat, body.lon, body.name or "Custom")
