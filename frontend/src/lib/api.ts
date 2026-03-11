@@ -168,10 +168,38 @@ export async function fetchFusionAnalysis(regionId: number): Promise<any> {
     return safeFetch(`${API}/fusion/${regionId}`);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fusionLocation(lat: number, lon: number, name?: string): Promise<any> {
+    try {
+        const res = await fetch(`${API}/fusion/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
 // --- Compound Risk (Phase 2B) ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchCompoundRisk(regionId: number): Promise<any> {
     return safeFetch(`${API}/compound-risk/${regionId}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function compoundRiskLocation(lat: number, lon: number, name?: string): Promise<any> {
+    try {
+        const res = await fetch(`${API}/compound-risk/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
 }
 
 // --- Asset Scoring (Phase 3A) ---
@@ -184,6 +212,20 @@ export async function fetchAssetScores(regionId: number): Promise<any> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchFinancialImpact(regionId: number): Promise<any> {
     return safeFetch(`${API}/financial/${regionId}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function financialImpactLocation(lat: number, lon: number, name?: string): Promise<any> {
+    try {
+        const res = await fetch(`${API}/financial/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
 }
 
 // --- ACD Monitoring (Phase 4) ---

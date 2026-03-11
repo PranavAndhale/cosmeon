@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation } from "@/lib/api";
 
 // ─── Types ───
 interface Region {
@@ -310,6 +310,12 @@ export default function GeospatialEngine() {
     setAdHocLoading(true);
     setAdHocExplanation(null);
     setMapClickPopup(null);
+    setFusionData(null);
+    setCompoundData(null);
+    setFinancialData(null);
+    setShowFusion(false);
+    setShowCompound(false);
+    setShowFinancial(false);
 
     if (mapRef.current) {
       mapRef.current.flyTo({ center: [lon, lat], zoom: 6, duration: 1500 });
@@ -1783,6 +1789,209 @@ export default function GeospatialEngine() {
                     </>
                   );
                 })()}
+
+                {/* ── Multi-Sensor Fusion Panel (Ad-Hoc) ── */}
+                {adHocData && !adHocLoading && (
+                  <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
+                    <button
+                      onClick={async () => {
+                        if (!adHocLocation) return;
+                        setShowFusion(prev => !prev);
+                        if (!fusionData && !fusionLoading) {
+                          setFusionLoading(true);
+                          const data = await fusionLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                          if (data && !('error' in data)) setFusionData(data);
+                          setFusionLoading(false);
+                        }
+                      }}
+                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                    >
+                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                        <Radio size={14} className="text-cyan-400" /> Sensor Fusion
+                      </span>
+                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
+                    </button>
+                    <AnimatePresence>
+                      {showFusion && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="px-4 pb-4 flex flex-col gap-2.5">
+                            <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
+                              Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting.
+                            </div>
+                            {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
+                            {fusionData && !fusionLoading && (
+                              <>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {[
+                                    { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF' },
+                                    { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80' },
+                                    { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc' },
+                                    { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8' },
+                                    { label: 'Quality', value: fusionData.quality_score, color: '#facc15' },
+                                  ].map(s => (
+                                    <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5">
+                                      <div className="text-[10px] text-gray-500 font-mono">{s.label}</div>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                          <div className="h-full rounded-full" style={{ width: `${(s.value * 100)}%`, backgroundColor: s.color }} />
+                                        </div>
+                                        <span className="text-[11px] font-mono text-gray-400">{(s.value * 100).toFixed(0)}%</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                {fusionData.fusion_weights && Object.keys(fusionData.fusion_weights).length > 0 && (
+                                  <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
+                                    <div className="text-[10px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
+                                    {Object.entries(fusionData.fusion_weights).map(([sensor, weight]) => (
+                                      <div key={sensor} className="flex items-center gap-2 mb-1">
+                                        <span className="text-[11px] font-mono text-gray-400 w-16 truncate">{sensor}</span>
+                                        <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                          <div className="h-full rounded-full bg-cyan-400" style={{ width: `${(Number(weight) * 100)}%` }} />
+                                        </div>
+                                        <span className="text-[11px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="text-[10px] font-mono text-gray-600">
+                                  Sensors: {fusionData.sensors_fused?.join(', ')}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {/* ── Compound Risk Panel (Ad-Hoc) ── */}
+                {adHocData && !adHocLoading && (
+                  <div className="bg-[#0A1628]/80 border border-rose-500/20 rounded-xl overflow-hidden shrink-0">
+                    <button
+                      onClick={async () => {
+                        if (!adHocLocation) return;
+                        setShowCompound(prev => !prev);
+                        if (!compoundData && !compoundLoading) {
+                          setCompoundLoading(true);
+                          const data = await compoundRiskLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                          if (data && !('error' in data)) setCompoundData(data);
+                          setCompoundLoading(false);
+                        }
+                      }}
+                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                    >
+                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
+                        <Shield size={14} className="text-rose-400" /> Compound Risk
+                      </span>
+                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showCompound ? 'rotate-90' : ''}`} />
+                    </button>
+                    <AnimatePresence>
+                      {showCompound && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="px-4 pb-4 flex flex-col gap-2.5">
+                            {compoundLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-rose-400/30 border-t-rose-400 rounded-full animate-spin" /></div>}
+                            {compoundData && !compoundLoading && (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[20px] font-bold font-mono ${compoundData.compound_level === 'CRITICAL' ? 'text-red-400' :
+                                    compoundData.compound_level === 'HIGH' ? 'text-orange-400' :
+                                      compoundData.compound_level === 'MEDIUM' ? 'text-yellow-400' : 'text-emerald-400'
+                                    }`}>{(compoundData.compound_score * 100).toFixed(0)}%</span>
+                                  <span className="text-[12px] font-mono text-gray-500">{compoundData.compound_level}</span>
+                                  {compoundData.cascading_amplification > 1.05 && (
+                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 bg-red-500/10">
+                                      ×{compoundData.cascading_amplification.toFixed(2)} cascade
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                  {compoundData.hazard_layers?.map((h: { name: string; severity: number; status: string }) => (
+                                    <div key={h.name} className="flex items-center gap-2">
+                                      <div className={`w-1.5 h-1.5 rounded-full ${h.status === 'active' ? 'bg-red-400' : h.status === 'warning' ? 'bg-yellow-400' : 'bg-gray-600'}`} />
+                                      <span className="text-[11px] font-mono text-gray-400 flex-1">{h.name.replace('_', ' ')}</span>
+                                      <span className="text-[11px] font-mono text-gray-500">{(h.severity * 100).toFixed(0)}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                {compoundData.recommendations?.length > 0 && (
+                                  <div className="flex flex-col gap-1 mt-1">
+                                    {compoundData.recommendations.slice(0, 3).map((r: string, i: number) => (
+                                      <div key={i} className="text-[11px] text-gray-400 flex gap-1.5 items-start">
+                                        <span className="text-rose-400">→</span> {r}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {/* ── Financial Impact Panel (Ad-Hoc) ── */}
+                {adHocData && !adHocLoading && (
+                  <div className="bg-[#0A1628]/80 border border-emerald-500/20 rounded-xl overflow-hidden shrink-0">
+                    <button
+                      onClick={async () => {
+                        if (!adHocLocation) return;
+                        setShowFinancial(prev => !prev);
+                        if (!financialData && !financialLoading) {
+                          setFinancialLoading(true);
+                          const data = await financialImpactLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+                          if (data && !('error' in data)) setFinancialData(data);
+                          setFinancialLoading(false);
+                        }
+                      }}
+                      className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                    >
+                      <span className={`text-[13px] uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
+                        <DollarSign size={14} className="text-emerald-400" /> Financial Impact
+                      </span>
+                      <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFinancial ? 'rotate-90' : ''}`} />
+                    </button>
+                    <AnimatePresence>
+                      {showFinancial && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                          <div className="px-4 pb-4 flex flex-col gap-2.5">
+                            {financialLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /></div>}
+                            {financialData && !financialLoading && (
+                              <>
+                                <div className="text-center">
+                                  <div className="text-[10px] text-gray-500 font-mono">TOTAL EXPOSURE</div>
+                                  <div className="text-[22px] font-bold font-mono text-emerald-400">
+                                    ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {[
+                                    { label: 'Direct', value: financialData.direct_damage_usd },
+                                    { label: 'Indirect', value: financialData.indirect_costs_usd },
+                                    { label: 'Recovery', value: financialData.recovery_cost_usd },
+                                  ].map(m => (
+                                    <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
+                                      <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
+                                      <div className="text-[12px] font-mono text-gray-300">${(m.value / 1000).toFixed(0)}K</div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-3 text-[11px] font-mono text-gray-500">
+                                  <span>🏥 {financialData.affected_population?.toLocaleString()} affected</span>
+                                  <span>📊 GDP: {financialData.gdp_impact_pct?.toFixed(3)}%</span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
               </div>
             </div>
           </motion.div>

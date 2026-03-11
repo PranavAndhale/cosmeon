@@ -787,7 +787,7 @@ def geocode_search(q: str = Query(..., min_length=2)):
         encoded = urllib.parse.quote(q)
         url = (
             f"https://nominatim.openstreetmap.org/search"
-            f"?q={encoded}&format=json&limit=8&addressdetails=1"
+            f"?q={encoded}&format=json&limit=8&addressdetails=1&accept-language=en"
         )
         req = urllib.request.Request(url, headers={"User-Agent": "COSMEON/1.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
@@ -1073,6 +1073,36 @@ def get_compound_risk(region_id: int):
         return {"error": str(e)}
 
 
+@app.post("/api/compound-risk/location")
+def compound_risk_location(body: LocationRequest):
+    """Compute compound multi-hazard risk for arbitrary coordinates."""
+    try:
+        import math
+        lat, lon = body.lat, body.lon
+        name = body.name or f"{lat:.2f}, {lon:.2f}"
+        fusion = _get_fusion().fuse_sensors(lat, lon, name)
+        from processing.external_data import ExternalDataIntegrator
+        ext = ExternalDataIntegrator()
+        rainfall = ext.fetch_rainfall(lat, lon, days=7)
+        elevation = ext.fetch_elevation(lat, lon)
+        # Estimate flood probability from fusion data
+        flood_prob = fusion.flood_confidence
+        result = _get_compound().compute_compound_risk(
+            flood_probability=flood_prob,
+            flood_confidence=fusion.flood_confidence,
+            vegetation_stress=fusion.vegetation_stress,
+            thermal_anomaly=fusion.thermal_anomaly,
+            soil_saturation=fusion.soil_saturation,
+            rainfall_7d_mm=rainfall.get("total_rainfall_mm", 0),
+            elevation_m=elevation.get("mean_elevation_m", 100),
+            region_name=name,
+        )
+        return result.to_dict()
+    except Exception as e:
+        logger.exception("Compound risk (location) failed")
+        return {"error": str(e)}
+
+
 # --- Asset-Level Scoring (Phase 3A) ---
 
 _asset_scorer = None
@@ -1148,6 +1178,33 @@ def get_financial_impact(region_id: int):
         return result.to_dict()
     except Exception as e:
         logger.exception("Financial impact failed for region %s", region_id)
+        return {"error": str(e)}
+
+
+@app.post("/api/financial/location")
+def financial_impact_location(body: LocationRequest):
+    """Estimate financial impact for arbitrary coordinates."""
+    try:
+        import math
+        lat, lon = body.lat, body.lon
+        name = body.name or f"{lat:.2f}, {lon:.2f}"
+        # Compute area from a ~1 degree bbox around the point
+        total_area = 111.0 * 111.0 * math.cos(math.radians(lat))  # ~1°x1° area
+        # Get fusion-based flood estimate
+        fusion = _get_fusion().fuse_sensors(lat, lon, name)
+        flood_prob = fusion.flood_confidence
+        flood_area = total_area * flood_prob
+        risk_level = "CRITICAL" if flood_prob > 0.6 else "HIGH" if flood_prob > 0.3 else "MEDIUM" if flood_prob > 0.1 else "LOW"
+        result = _get_financial().estimate_impact(
+            risk_level=risk_level,
+            flood_area_km2=flood_area,
+            total_area_km2=total_area,
+            flood_probability=flood_prob,
+            region_name=name,
+        )
+        return result.to_dict()
+    except Exception as e:
+        logger.exception("Financial impact (location) failed")
         return {"error": str(e)}
 
 
