@@ -22,5 +22,8 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 python-dateutil>=2.8.0
 
+# Authentication
+PyJWT>=2.8.0
+
 # Logging
 structlog>=23.1.0

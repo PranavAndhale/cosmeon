@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy import desc
 
 from database.models import (
-    Region, RiskAssessmentRecord, ChangeEvent, ProcessingLog,
+    Region, RiskAssessmentRecord, ChangeEvent, ProcessingLog, User,
     get_session, init_db,
 )
 
@@ -262,3 +262,91 @@ class DatabaseManager:
             return report
         finally:
             session.close()
+
+    # --- User / Auth operations ---
+
+    def create_user(self, username: str, hashed_password: str, role: str = "viewer") -> Optional[User]:
+        """Create a new user. Returns None if username already exists."""
+        session = get_session()
+        try:
+            existing = session.query(User).filter_by(username=username).first()
+            if existing:
+                return None
+            user = User(username=username, hashed_password=hashed_password, role=role)
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            logger.info("Created user '%s' with role '%s'", username, role)
+            return user
+        finally:
+            session.close()
+
+    def get_user_by_username(self, username: str) -> Optional[User]:
+        """Fetch a user by username."""
+        session = get_session()
+        try:
+            return session.query(User).filter_by(username=username).first()
+        finally:
+            session.close()
+
+    def get_all_users(self) -> list[User]:
+        """List all users (admin-only)."""
+        session = get_session()
+        try:
+            return session.query(User).all()
+        finally:
+            session.close()
+
+    def update_last_login(self, user_id: int) -> None:
+        """Record last login timestamp."""
+        session = get_session()
+        try:
+            user = session.query(User).get(user_id)
+            if user:
+                user.last_login = datetime.utcnow()
+                session.commit()
+        finally:
+            session.close()
+
+    def users_exist(self) -> bool:
+        """Return True if any users have been seeded."""
+        session = get_session()
+        try:
+            return session.query(User).count() > 0
+        finally:
+            session.close()
+
+    def get_monthly_trends(self, region_id: int, months: int = 12) -> list[dict]:
+        """Aggregate risk history into monthly buckets for the trend dashboard."""
+        from collections import defaultdict
+        history = self.get_risk_history(region_id, limit=500)
+        monthly: dict = defaultdict(list)
+        for r in history:
+            ts = r.timestamp
+            if ts:
+                key = f"{ts.year}-{ts.month:02d}"
+                monthly[key].append(r)
+
+        result = []
+        for month_key in sorted(monthly.keys())[-months:]:
+            records = monthly[month_key]
+            risk_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+            for r in records:
+                risk_counts[r.risk_level] = risk_counts.get(r.risk_level, 0) + 1
+            dominant = max(risk_counts, key=lambda k: risk_counts[k])
+            from datetime import datetime as _dt
+            label = _dt.strptime(month_key, "%Y-%m").strftime("%b %Y")
+            result.append({
+                "month": month_key,
+                "month_label": label,
+                "avg_flood_pct": round(sum(r.flood_percentage for r in records) / len(records) * 100, 2),
+                "max_flood_pct": round(max(r.flood_percentage for r in records) * 100, 2),
+                "avg_flood_area_km2": round(sum(r.flood_area_km2 for r in records) / len(records), 1),
+                "max_flood_area_km2": round(max(r.flood_area_km2 for r in records), 1),
+                "avg_confidence": round(sum(r.confidence_score for r in records) / len(records) * 100, 1),
+                "dominant_risk_level": dominant,
+                "risk_distribution": risk_counts,
+                "assessment_count": len(records),
+            })
+        return result
+

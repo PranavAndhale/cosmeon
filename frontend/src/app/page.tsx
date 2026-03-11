@@ -7,7 +7,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
+import { BarChart, Bar, LineChart, Line } from "recharts";
 
 // ─── Types ───
 interface Region {
@@ -230,6 +231,66 @@ export default function GeospatialEngine() {
   const [comparisonMode, setComparisonMode] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
+
+  // ── Auth State ──
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // ── Trend Dashboard State ──
+  const [showTrends, setShowTrends] = useState(false);
+  const [trendData, setTrendData] = useState<TrendData | null>(null);
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  // ── Scheduler State ──
+  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
+
+  // Load scheduler status on mount
+  useEffect(() => {
+    fetchSchedulerStatus().then(s => setSchedulerStatus(s));
+    const interval = setInterval(() => fetchSchedulerStatus().then(s => setSchedulerStatus(s)), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Restore auth from localStorage on mount
+  useEffect(() => {
+    const token = localStorage.getItem('cosmeon_token');
+    const user = localStorage.getItem('cosmeon_user');
+    if (token && user) {
+      try {
+        setAuthToken(token);
+        setAuthUser(JSON.parse(user));
+      } catch { localStorage.removeItem('cosmeon_token'); localStorage.removeItem('cosmeon_user'); }
+    }
+  }, []);
+
+  const handleLogin = async () => {
+    setLoginLoading(true); setLoginError(null);
+    const result = await authLogin(loginUsername, loginPassword);
+    setLoginLoading(false);
+    if (!result) { setLoginError('Invalid username or password'); return; }
+    setAuthToken(result.access_token);
+    setAuthUser(result.user);
+    localStorage.setItem('cosmeon_token', result.access_token);
+    localStorage.setItem('cosmeon_user', JSON.stringify(result.user));
+    setShowLogin(false); setLoginUsername(''); setLoginPassword('');
+  };
+
+  const handleLogout = () => {
+    setAuthToken(null); setAuthUser(null);
+    localStorage.removeItem('cosmeon_token'); localStorage.removeItem('cosmeon_user');
+  };
+
+  const openTrends = async () => {
+    if (!selectedRegion) return;
+    setShowTrends(true); setTrendLoading(true);
+    const d = await fetchTrends(selectedRegion.id, 24);
+    setTrendData(d); setTrendLoading(false);
+  };
 
 
 
@@ -644,7 +705,32 @@ export default function GeospatialEngine() {
             <div className="w-2 h-2 rounded-full bg-[#20E251] shadow-[0_0_8px_#20E251]" />
             System Live
           </div>
-          <button className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0B0E11] to-[#151A22] border border-white/20 flex items-center justify-center text-xs font-bold font-mono hover:border-white/40 transition-colors">PA</button>
+          {/* Scheduler status pill */}
+          {schedulerStatus && (
+            <div
+              title={`Auto-monitoring: every ${schedulerStatus.interval_hours}h\nNext: ${schedulerStatus.next_run ? new Date(schedulerStatus.next_run + 'Z').toLocaleTimeString() : 'soon'}\nRuns: ${schedulerStatus.runs_completed}`}
+              className={`h-10 px-3 flex items-center gap-2 rounded-lg text-[11px] font-mono border cursor-default ${schedulerStatus.enabled ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-gray-800/50 border-white/10 text-gray-500'
+                }`}
+            >
+              <div className={`w-1.5 h-1.5 rounded-full ${schedulerStatus.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-gray-600'}`} />
+              AUTO {schedulerStatus.interval_hours}H
+            </div>
+          )}
+          {/* Auth: user button or login */}
+          {authUser ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 h-10 px-3 rounded-lg bg-white/5 border border-white/10">
+                <span className={`text-[10px] uppercase font-mono px-1.5 py-0.5 rounded ${authUser.role === 'admin' ? 'bg-red-500/20 text-red-400' :
+                  authUser.role === 'analyst' ? 'bg-amber-500/20 text-amber-400' :
+                    'bg-blue-500/20 text-blue-400'
+                  }`}>{authUser.role}</span>
+                <span className="text-[13px] font-mono text-gray-200">{authUser.username}</span>
+              </div>
+              <button onClick={handleLogout} className="h-10 px-3 text-[11px] font-mono text-gray-500 hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10 border border-transparent hover:border-red-500/20">Logout</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowLogin(true)} className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0B0E11] to-[#151A22] border border-white/20 flex items-center justify-center text-xs font-bold font-mono hover:border-cyan-500/50 transition-colors">PA</button>
+          )}
         </div>
       </motion.div>
 
@@ -1101,6 +1187,19 @@ export default function GeospatialEngine() {
                     </div>
                   </div>
                 )}
+
+                {/* ── Historical Trends Button ── */}
+                <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
+                  <button
+                    onClick={openTrends}
+                    className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                  >
+                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                      <TrendingUp size={14} className="text-cyan-400" /> Historical Trend Analysis
+                    </span>
+                    <ChevronRight size={14} className="text-gray-500" />
+                  </button>
+                </div>
 
                 {/* ── Forecast Panel ── */}
                 <div className="bg-[#0A1628]/80 border border-violet-500/20 rounded-xl overflow-hidden shrink-0">
@@ -2381,6 +2480,200 @@ export default function GeospatialEngine() {
           </div>
         )}
       </motion.div>
+
+      {/* ═══ LOGIN MODAL ═══ */}
+      <AnimatePresence>
+        {showLogin && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center"
+            onClick={() => setShowLogin(false)}>
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-[380px] bg-[#0D1117] border border-white/10 rounded-2xl p-8 shadow-2xl flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-mono font-bold text-white">COSMEON Login</h2>
+                  <p className="text-[12px] text-gray-500 font-mono mt-0.5">Authenticate to access protected features</p>
+                </div>
+                <button onClick={() => setShowLogin(false)} className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors"><X size={14} className="text-gray-400" /></button>
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-mono text-gray-500 uppercase tracking-wider">Username</label>
+                  <input
+                    type="text" value={loginUsername} onChange={e => setLoginUsername(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    placeholder="admin"
+                    className="w-full px-4 py-3 bg-[#151A22] border border-white/10 rounded-lg text-sm font-mono text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-mono text-gray-500 uppercase tracking-wider">Password</label>
+                  <input
+                    type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 bg-[#151A22] border border-white/10 rounded-lg text-sm font-mono text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  />
+                </div>
+                {loginError && <p className="text-[12px] font-mono text-red-400">{loginError}</p>}
+              </div>
+              <button onClick={handleLogin} disabled={loginLoading || !loginUsername || !loginPassword}
+                className="w-full py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-mono text-sm font-bold text-black">
+                {loginLoading ? 'Authenticating...' : 'Login'}
+              </button>
+              <div className="text-[11px] text-gray-600 font-mono text-center">
+                Default: <span className="text-gray-400">admin / admin123</span> · <span className="text-gray-400">analyst / analyst123</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ TREND DASHBOARD MODAL ═══ */}
+      <AnimatePresence>
+        {showTrends && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
+            onClick={() => setShowTrends(false)}>
+            <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-5xl max-h-[90vh] bg-[#0D1117] border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+              {/* Header */}
+              <div className="px-8 py-5 border-b border-white/5 flex items-center justify-between bg-[#0B0E11]">
+                <div>
+                  <h2 className="text-lg font-mono font-bold text-white flex items-center gap-2">
+                    <TrendingUp size={18} className="text-cyan-400" />
+                    Historical Risk Trend — {trendData?.region_name || selectedRegion?.name}
+                  </h2>
+                  <p className="text-[12px] font-mono text-gray-500 mt-0.5">
+                    {trendData ? `${trendData.data_points} monthly snapshots · 24-month view` : 'Loading trend data...'}
+                  </p>
+                </div>
+                <button onClick={() => setShowTrends(false)} className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+                  <X size={16} className="text-gray-400" />
+                </button>
+              </div>
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-8">
+                {trendLoading ? (
+                  <div className="flex-1 flex items-center justify-center gap-3">
+                    <div className="w-6 h-6 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                    <span className="font-mono text-gray-400 text-sm">Loading trend data...</span>
+                  </div>
+                ) : trendData && trendData.trend.length > 0 ? (
+                  <>
+                    {/* Summary row */}
+                    <div className="grid grid-cols-4 gap-4">
+                      {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map(level => {
+                        const count = trendData.trend.reduce((s, m) => s + (m.risk_distribution[level as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'] || 0), 0);
+                        const color = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f97316' : level === 'MEDIUM' ? '#eab308' : '#22c55e';
+                        return (
+                          <div key={level} className="bg-[#151A22] border border-white/5 rounded-xl p-4 flex flex-col gap-1">
+                            <span className="text-[10px] font-mono uppercase tracking-widest text-gray-500">{level}</span>
+                            <span className="text-2xl font-mono font-bold" style={{ color }}>{count}</span>
+                            <span className="text-[11px] text-gray-600 font-mono">months</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Flood % over time */}
+                    <div className="bg-[#151A22] border border-white/5 rounded-xl p-6">
+                      <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Flood Coverage % — Monthly Average vs Peak</h3>
+                      <div className="h-[200px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="trendGradAvg" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.3} />
+                                <stop offset="95%" stopColor="#00E5FF" stopOpacity={0} />
+                              </linearGradient>
+                              <linearGradient id="trendGradPeak" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
+                            <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                            <YAxis tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }} formatter={(v) => [`${Number(v).toFixed(1)}%`]} />
+                            <Area type="monotone" dataKey="avg_flood_pct" stroke="#00E5FF" fill="url(#trendGradAvg)" strokeWidth={2} name="Avg %" dot={false} />
+                            <Area type="monotone" dataKey="max_flood_pct" stroke="#f97316" fill="url(#trendGradPeak)" strokeWidth={1.5} strokeDasharray="4 2" name="Peak %" dot={false} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Area affected + Confidence side by side */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Avg Flood Area km²</h3>
+                        <div className="h-[160px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                              <YAxis tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(0)} km²`]} />
+                              <Bar dataKey="avg_flood_area_km2" fill="#00E5FF" fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Area km²" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Model Confidence %</h3>
+                        <div className="h-[160px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                              <YAxis domain={[80, 100]} tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
+                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(1)}%`]} />
+                              <Line type="monotone" dataKey="avg_confidence" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Confidence" />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Monthly table */}
+                    <div className="bg-[#151A22] border border-white/5 rounded-xl overflow-hidden">
+                      <table className="w-full text-[12px] font-mono">
+                        <thead>
+                          <tr className="border-b border-white/5 bg-black/20">
+                            {['Month', 'Dominant Risk', 'Avg Flood %', 'Peak Flood %', 'Avg Area km²', 'Confidence', 'Assessments'].map(h => (
+                              <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-widest text-gray-600">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...trendData.trend].reverse().map((m, i) => {
+                            const rc = m.dominant_risk_level === 'CRITICAL' ? '#ef4444' : m.dominant_risk_level === 'HIGH' ? '#f97316' : m.dominant_risk_level === 'MEDIUM' ? '#eab308' : '#22c55e';
+                            return (
+                              <tr key={m.month} className={`border-b border-white/5 ${i % 2 === 0 ? 'bg-black/10' : ''} hover:bg-white/3 transition-colors`}>
+                                <td className="px-4 py-2.5 text-gray-300">{m.month_label}</td>
+                                <td className="px-4 py-2.5"><span className="font-bold" style={{ color: rc }}>{m.dominant_risk_level}</span></td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.avg_flood_pct.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.max_flood_pct.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.avg_flood_area_km2.toFixed(0)}</td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.avg_confidence.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-500">{m.assessment_count}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 font-mono text-sm">No trend data available for this region.</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </main>
   );

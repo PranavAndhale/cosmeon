@@ -307,3 +307,111 @@ export async function reverseGeocode(lat: number, lon: number): Promise<{ displa
         return { display_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, short_name: `${lat.toFixed(2)}, ${lon.toFixed(2)}` };
     }
 }
+
+// === Authentication ===
+
+export interface AuthUser {
+    id: number;
+    username: string;
+    role: 'admin' | 'analyst' | 'viewer';
+    created_at: string;
+    last_login: string | null;
+}
+
+export async function authLogin(username: string, password: string): Promise<{ access_token: string; user: AuthUser } | null> {
+    try {
+        const res = await fetch(`${API}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
+export async function fetchMe(token: string): Promise<AuthUser | null> {
+    try {
+        const res = await fetch(`${API}/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
+// === Historical Trends ===
+
+export interface MonthlyTrend {
+    month: string;
+    month_label: string;
+    avg_flood_pct: number;
+    max_flood_pct: number;
+    avg_flood_area_km2: number;
+    max_flood_area_km2: number;
+    avg_confidence: number;
+    dominant_risk_level: string;
+    risk_distribution: { LOW: number; MEDIUM: number; HIGH: number; CRITICAL: number };
+    assessment_count: number;
+}
+
+export interface TrendData {
+    region_id: number;
+    region_name: string;
+    months: number;
+    data_points: number;
+    trend: MonthlyTrend[];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchTrends(regionId: number, months = 12): Promise<TrendData | null> {
+    return safeFetch(`${API}/trends/${regionId}?months=${months}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchGlobalTrends(months = 6): Promise<any> {
+    return safeFetch(`${API}/trends/global/summary?months=${months}`);
+}
+
+// === Periodic Scheduler ===
+
+export interface SchedulerStatus {
+    enabled: boolean;
+    interval_hours: number;
+    last_run: string | null;
+    next_run: string | null;
+    runs_completed: number;
+    task_active: boolean;
+}
+
+export async function fetchSchedulerStatus(): Promise<SchedulerStatus | null> {
+    return safeFetch(`${API}/scheduler/status`);
+}
+
+export async function triggerSchedulerNow(token: string): Promise<{ status: string } | null> {
+    try {
+        const res = await fetch(`${API}/scheduler/trigger`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
+export async function configureScheduler(token: string, interval_hours?: number, enabled?: boolean): Promise<SchedulerStatus | null> {
+    try {
+        const res = await fetch(`${API}/scheduler/configure`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ interval_hours, enabled }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+

@@ -145,6 +145,27 @@ class ProcessingLog(Base):
         }
 
 
+class User(Base):
+    """User account for authentication and role-based access."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(100), nullable=False, unique=True)
+    hashed_password = Column(String(512), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")  # admin, analyst, viewer
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "role": self.role,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_login": self.last_login.isoformat() if self.last_login else None,
+        }
+
+
 # Database engine and session factory
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(bind=engine)

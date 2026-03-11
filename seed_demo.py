@@ -1,6 +1,6 @@
 """
 Seed script: Populate cosmeon.db with realistic demo regions,
-risk assessments, change events, and processing logs.
+risk assessments, change events, processing logs, and default users.
 Run: python3 seed_demo.py
 """
 import sys, os
@@ -9,12 +9,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from datetime import datetime, timedelta
 import random
 
-from database.models import init_db, get_session, Region, RiskAssessmentRecord, ChangeEvent, ProcessingLog
+from database.models import init_db, get_session, Region, RiskAssessmentRecord, ChangeEvent, ProcessingLog, User
 
 init_db()
 session = get_session()
 
-# Clear old data
+# Clear old data (keep users — preserve accounts across re-seeds)
 for tbl in [ProcessingLog, ChangeEvent, RiskAssessmentRecord, Region]:
     session.query(tbl).delete()
 session.commit()
@@ -38,15 +38,12 @@ for name, bbox in regions_data:
 session.commit()
 print(f"✓ Created {len(created_regions)} regions")
 
-# ── 2. Risk Assessments (12 months of history per region) ──
-risk_levels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-change_types = ["INCREASE", "DECREASE", "STABLE", "SIGNIFICANT_INCREASE"]
+# ── 2. Risk Assessments (24 months per region — rich trend charts) ──
 now = datetime.utcnow()
 
 for region in created_regions:
-    for month_offset in range(12):
+    for month_offset in range(24):
         ts = now - timedelta(days=30 * month_offset + random.randint(0, 5))
-        # Bihar and Jakarta get higher risk, others lower
         if region.name in ("Bihar, India", "Jakarta, Indonesia", "Dhaka, Bangladesh"):
             flood_pct = random.uniform(0.10, 0.40)
             risk = random.choice(["HIGH", "CRITICAL", "HIGH", "MEDIUM"])
@@ -77,7 +74,7 @@ for region in created_regions:
         session.add(rec)
 
 session.commit()
-print(f"✓ Created {len(created_regions)*12} risk assessments")
+print(f"✓ Created {len(created_regions) * 24} risk assessments (24 months)")
 
 # ── 3. Change Events (8 per region) ──
 for region in created_regions:
@@ -106,20 +103,20 @@ for region in created_regions:
         session.add(ev)
 
 session.commit()
-print(f"✓ Created {len(created_regions)*8} change events")
+print(f"✓ Created {len(created_regions) * 8} change events")
 
 # ── 4. Processing Logs ──
 steps = [
-    ("STAC_SEARCH", "completed", "Searched Sentinel-2 catalog for AOI"),
+    ("STAC_SEARCH",     "completed", "Searched Sentinel-2 catalog for AOI"),
     ("DOWNLOAD_SCENES", "completed", "Downloaded 4 scenes from Planetary Computer"),
-    ("NDWI_COMPUTE", "completed", "Computed NDWI water index for all bands"),
-    ("FLOOD_CLASSIFY", "completed", "Classified flood/non-flood pixels via Otsu threshold"),
-    ("CHANGE_DETECT", "completed", "Compared baseline vs current water masks"),
-    ("RISK_ASSESS", "completed", "Generated risk classifications for all regions"),
-    ("EXTERNAL_DATA", "completed", "Fetched rainfall and elevation data from Open-Meteo"),
-    ("PREDICTION", "completed", "Ran GBM flood predictor model"),
-    ("REPORT_GEN", "completed", "Generated structured summary reports"),
-    ("PIPELINE_DONE", "completed", "Full pipeline completed successfully"),
+    ("NDWI_COMPUTE",    "completed", "Computed NDWI water index for all bands"),
+    ("FLOOD_CLASSIFY",  "completed", "Classified flood/non-flood pixels via Otsu threshold"),
+    ("CHANGE_DETECT",   "completed", "Compared baseline vs current water masks"),
+    ("RISK_ASSESS",     "completed", "Generated risk classifications for all regions"),
+    ("EXTERNAL_DATA",   "completed", "Fetched rainfall and elevation data from Open-Meteo"),
+    ("PREDICTION",      "completed", "Ran GBM flood predictor model"),
+    ("REPORT_GEN",      "completed", "Generated structured summary reports"),
+    ("PIPELINE_DONE",   "completed", "Full pipeline completed successfully"),
 ]
 
 for region in created_regions:
@@ -136,7 +133,25 @@ for region in created_regions:
         session.add(log)
 
 session.commit()
-print(f"✓ Created {len(created_regions)*len(steps)} processing logs")
+print(f"✓ Created {len(created_regions) * len(steps)} processing logs")
+
+# ── 5. Default Users (only if no users exist yet) ──
+from api.auth import hash_password
+
+existing_count = session.query(User).count()
+if existing_count == 0:
+    default_users = [
+        ("admin",   "admin123",   "admin"),
+        ("analyst", "analyst123", "analyst"),
+        ("viewer",  "viewer123",  "viewer"),
+    ]
+    for uname, pwd, role in default_users:
+        u = User(username=uname, hashed_password=hash_password(pwd), role=role)
+        session.add(u)
+    session.commit()
+    print(f"✓ Created {len(default_users)} default users: admin / analyst / viewer")
+else:
+    print(f"✓ Users already exist ({existing_count}), skipping user seed")
 
 session.close()
-print("\n✅ Database seeded successfully! Run 'python3 main.py api' to start the server.")
+print("\n✅ Database seeded! Credentials: admin/admin123  analyst/analyst123  viewer/viewer123")

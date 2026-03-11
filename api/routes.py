@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse, FileResponse
@@ -545,9 +545,35 @@ from processing.live_analysis import LiveAnalysisEngine
 analysis_engine = LiveAnalysisEngine()
 
 
+# --- Auth + Periodic Scheduler Setup ---
+from api.auth import (
+    hash_password, verify_password, create_token, decode_token,
+    get_current_user, get_optional_user, require_role,
+)
+from processing.periodic_scheduler import PeriodicScheduler
+
+periodic_scheduler = PeriodicScheduler(interval_hours=6)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "viewer"  # admin, analyst, viewer
+
+
+class SchedulerConfigRequest(BaseModel):
+    interval_hours: Optional[int] = None
+    enabled: Optional[bool] = None
+
+
 @app.on_event("startup")
 async def auto_analyze_on_startup():
-    """Automatically run live analysis on all regions when server starts."""
+    """Auto-analyze all regions on startup AND start the periodic scheduler."""
     import asyncio
     logger.info("=== AUTO-ANALYSIS: Running live detection on all regions ===")
 
@@ -565,6 +591,8 @@ async def auto_analyze_on_startup():
                 len(results),
                 sum(1 for r in results if r.alert_triggered),
             )
+        # Start periodic scheduler after initial analysis
+        periodic_scheduler.start(analysis_engine, db)
 
     asyncio.create_task(run_analysis())
 
@@ -1481,6 +1509,121 @@ def get_unet_status():
         "status": "trained" if trained else "not_trained",
         "model_path": str(UNET_MODEL_PATH) if trained else None,
     }
+
+
+# ─── Authentication Endpoints ────────────────────────────────────────────────
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest):
+    """Login with username/password, returns a JWT token."""
+    user = db.get_user_by_username(req.username)
+    if not user or not verify_password(req.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    db.update_last_login(user.id)
+    token = create_token(user.id, user.username, user.role)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user.to_dict(),
+    }
+
+
+@app.post("/api/auth/register")
+def register(req: RegisterRequest, _admin=Depends(require_role("admin"))):
+    """Register a new user (admin only)."""
+    if req.role not in ("admin", "analyst", "viewer"):
+        raise HTTPException(status_code=400, detail="Invalid role. Must be: admin, analyst, viewer")
+    hashed = hash_password(req.password)
+    user = db.create_user(req.username, hashed, req.role)
+    if not user:
+        raise HTTPException(status_code=409, detail=f"Username '{req.username}' already exists")
+    return {"status": "created", "user": user.to_dict()}
+
+
+@app.get("/api/auth/me")
+def get_me(current_user: dict = Depends(get_current_user)):
+    """Get current authenticated user info."""
+    user = db.get_user_by_username(current_user["username"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user.to_dict()
+
+
+@app.get("/api/auth/users")
+def list_users(_admin=Depends(require_role("admin"))):
+    """List all users (admin only)."""
+    users = db.get_all_users()
+    return {"users": [u.to_dict() for u in users]}
+
+
+# ─── Historical Trend Endpoints ───────────────────────────────────────────────
+
+@app.get("/api/trends/{region_id}")
+def get_trends(region_id: int, months: int = Query(12, ge=1, le=36)):
+    """Monthly aggregated risk trend data for the trend dashboard."""
+    region = db.get_region(region_id)
+    if not region:
+        raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
+    trend = db.get_monthly_trends(region_id, months=months)
+    return {
+        "region_id": region_id,
+        "region_name": region.name,
+        "months": months,
+        "data_points": len(trend),
+        "trend": trend,
+    }
+
+
+@app.get("/api/trends/global/summary")
+def get_global_trends(months: int = Query(6, ge=1, le=24)):
+    """Cross-region trend comparison for the global view."""
+    all_regions = db.get_all_regions()
+    result = []
+    for region in all_regions:
+        trend = db.get_monthly_trends(region.id, months=months)
+        if trend:
+            latest = trend[-1]
+            result.append({
+                "region_id": region.id,
+                "region_name": region.name,
+                "latest_month": latest["month_label"],
+                "latest_risk": latest["dominant_risk_level"],
+                "avg_flood_pct": latest["avg_flood_pct"],
+                "trend_direction": (
+                    "rising" if len(trend) >= 2 and trend[-1]["avg_flood_pct"] > trend[-2]["avg_flood_pct"]
+                    else "falling" if len(trend) >= 2 and trend[-1]["avg_flood_pct"] < trend[-2]["avg_flood_pct"]
+                    else "stable"
+                ),
+                "months": trend,
+            })
+    return {"regions": result, "months": months}
+
+
+# ─── Periodic Scheduler Endpoints ─────────────────────────────────────────────
+
+@app.get("/api/scheduler/status")
+def get_scheduler_status():
+    """Get periodic monitoring scheduler status (next run, interval, runs completed)."""
+    return periodic_scheduler.get_status()
+
+
+@app.post("/api/scheduler/configure")
+def configure_scheduler(req: SchedulerConfigRequest, _admin=Depends(require_role("admin"))):
+    """Configure the scheduler interval or enable/disable (admin only)."""
+    periodic_scheduler.configure(
+        interval_hours=req.interval_hours,
+        enabled=req.enabled,
+    )
+    return {"status": "configured", **periodic_scheduler.get_status()}
+
+
+@app.post("/api/scheduler/trigger")
+def trigger_scheduler_now(current_user: dict = Depends(get_current_user)):
+    """Trigger an immediate analysis run (analyst or admin)."""
+    if current_user.get("role") not in ("admin", "analyst"):
+        raise HTTPException(status_code=403, detail="Requires analyst or admin role")
+    periodic_scheduler.trigger_now()
+    return {"status": "triggered", "message": "Immediate analysis run started"}
 
 
 # ─── Catch-all: Serve Next.js static frontend ───
