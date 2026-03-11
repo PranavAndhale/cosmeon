@@ -986,9 +986,12 @@ export default function GeospatialEngine() {
                       {/* Top Contributing Factors */}
                       <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
                         <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
-                          Top Contributing Factors
+                          All Contributing Factors
                         </span>
-                        {ml.top_drivers.slice(0, 5).map(d => (
+                        <span className="text-[11px] text-gray-600 font-mono -mt-1">
+                          ML feature importance — how much each input drives the prediction
+                        </span>
+                        {ml.top_drivers.map(d => (
                           <div key={d.feature} className="flex flex-col gap-0.5">
                             <div className="flex items-center justify-between">
                               <span className={`text-[13px] text-gray-400 ${textMono}`}>{d.feature.replace(/_/g, ' ')}</span>
@@ -1065,7 +1068,10 @@ export default function GeospatialEngine() {
                 {/* Risk History Mini Chart */}
                 {chartData.length > 0 && (
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4">
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} block mb-3`}>{currentOrb.chartLabel}</span>
+                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} block mb-1`}>{currentOrb.chartLabel}</span>
+                    <span className="text-[11px] text-gray-600 font-mono block mb-3">
+                      {activeOrb === 'flood' ? 'Historical flood coverage from satellite analysis over the past 12 months' : activeOrb === 'infra' ? 'Water change percentage impacting infrastructure over time' : 'Model confidence trend based on data quality and prediction accuracy'}
+                    </span>
                     <div className="h-[120px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData}>
@@ -1285,17 +1291,21 @@ export default function GeospatialEngine() {
                     {showFusion && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                         <div className="px-4 pb-4 flex flex-col gap-2.5">
+                          <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
+                            Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting — unlike single-source analysis, this fuses all satellite sources for robust flood detection even through cloud cover.
+                          </div>
                           {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
                           {fusionData && !fusionLoading && (
                             <>
                               <div className="grid grid-cols-2 gap-2">
                                 {[
-                                  { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF' },
-                                  { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80' },
-                                  { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc' },
-                                  { label: 'Quality', value: fusionData.quality_score, color: '#facc15' },
+                                  { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF', desc: 'Combined multi-sensor flood likelihood' },
+                                  { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80', desc: 'Vegetation health anomaly from optical' },
+                                  { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc', desc: 'Ground water saturation from weather' },
+                                  { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage from SAR' },
+                                  { label: 'Quality', value: fusionData.quality_score, color: '#facc15', desc: 'Overall data reliability score' },
                                 ].map(s => (
-                                  <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5">
+                                  <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5" title={s.desc}>
                                     <div className="text-[10px] text-gray-500 font-mono">{s.label}</div>
                                     <div className="flex items-center gap-2 mt-1">
                                       <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -1306,9 +1316,25 @@ export default function GeospatialEngine() {
                                   </div>
                                 ))}
                               </div>
+                              {/* Fusion Weights Breakdown */}
+                              {fusionData.fusion_weights && Object.keys(fusionData.fusion_weights).length > 0 && (
+                                <div className="bg-[#151A22] rounded-lg p-2.5 border border-white/5">
+                                  <div className="text-[10px] text-gray-500 font-mono mb-1.5">ADAPTIVE FUSION WEIGHTS</div>
+                                  <div className="text-[10px] text-gray-600 font-mono mb-1">How much each sensor contributes — auto-adjusted based on data quality and cloud cover</div>
+                                  {Object.entries(fusionData.fusion_weights).map(([sensor, weight]) => (
+                                    <div key={sensor} className="flex items-center gap-2 mb-1">
+                                      <span className="text-[11px] font-mono text-gray-400 w-16 truncate">{sensor}</span>
+                                      <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                                        <div className="h-full rounded-full bg-cyan-400" style={{ width: `${(Number(weight) * 100)}%` }} />
+                                      </div>
+                                      <span className="text-[11px] font-mono text-gray-500 w-10 text-right">{(Number(weight) * 100).toFixed(0)}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               {fusionData.cloud_penetration_used && (
                                 <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1.5">
-                                  <Radio size={10} /> SAR cloud-penetration active
+                                  <Radio size={10} /> SAR cloud-penetration active — optical blocked by clouds, SAR enables analysis
                                 </div>
                               )}
                               <div className="text-[10px] font-mono text-gray-600">
@@ -1316,7 +1342,7 @@ export default function GeospatialEngine() {
                               </div>
                               {fusionData.thermal_anomaly !== 0 && (
                                 <div className="text-[11px] font-mono text-gray-500">
-                                  Thermal: {fusionData.thermal_anomaly > 0 ? '+' : ''}{fusionData.thermal_anomaly?.toFixed(1)}°C anomaly
+                                  Thermal: {fusionData.thermal_anomaly > 0 ? '+' : ''}{fusionData.thermal_anomaly?.toFixed(1)}°C anomaly — {fusionData.thermal_anomaly > 2 ? 'significant heat stress detected' : fusionData.thermal_anomaly < -2 ? 'cooling anomaly detected' : 'within normal range'}
                                 </div>
                               )}
                             </>
@@ -1734,8 +1760,11 @@ export default function GeospatialEngine() {
 
                             {/* Top factors */}
                             <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
-                              <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>Top Contributing Factors</span>
-                              {ml.top_drivers.slice(0, 5).map((d: { feature: string; importance: number; influence: string }) => (
+                              <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>All Contributing Factors</span>
+                              <span className="text-[11px] text-gray-600 font-mono -mt-1">
+                                ML feature importance — how much each input drives the prediction
+                              </span>
+                              {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => (
                                 <div key={d.feature} className="flex flex-col gap-0.5">
                                   <div className="flex items-center justify-between">
                                     <span className={`text-[13px] text-gray-400 ${textMono}`}>{d.feature.replace(/_/g, ' ')}</span>
@@ -1763,9 +1792,14 @@ export default function GeospatialEngine() {
       {/* ═══ D. TIME-SERIES (BOTTOM CENTER) ═══ */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`absolute left-[390px] right-[430px] bottom-6 h-[180px] z-20 ${glassClass} flex flex-col overflow-hidden`}>
         <div className="px-5 py-3 border-b border-white/10 flex justify-between items-center bg-black/40">
-          <h3 className={`text-[12px] uppercase text-gray-400 ${textMono} tracking-widest`}>
-            {selectedRegion ? `${selectedRegion.name} — ${currentOrb.panelTitle}` : adHocLocation ? `${adHocLocation.name} — ${currentOrb.panelTitle}` : 'Time-Series & Change Detection'}
-          </h3>
+          <div className="flex flex-col">
+            <h3 className={`text-[12px] uppercase text-gray-400 ${textMono} tracking-widest`}>
+              {selectedRegion ? `${selectedRegion.name} — ${currentOrb.panelTitle}` : adHocLocation ? `${adHocLocation.name} — ${currentOrb.panelTitle}` : 'Time-Series & Change Detection'}
+            </h3>
+            <span className={`text-[10px] text-gray-600 ${textMono}`}>
+              {activeOrb === 'flood' ? 'Satellite-derived flood coverage trend from historical risk assessments' : activeOrb === 'infra' ? 'Infrastructure exposure trend based on water change analysis' : 'Vegetation anomaly index over time from NDVI analysis'}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <span className={`text-[12px] text-gray-500 flex items-center gap-2 ${textMono}`}>
               <SlidersHorizontal size={12} className="text-gray-400" /> Comparison

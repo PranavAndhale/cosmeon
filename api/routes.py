@@ -656,6 +656,17 @@ def run_live_analysis(region_id: int):
         bbox=region.bbox,
     )
 
+    # Compute real area from bounding box geometry
+    import math
+    bbox = region.bbox
+    lat_diff = abs(bbox[3] - bbox[1])
+    lon_diff = abs(bbox[2] - bbox[0])
+    lat_mid = (bbox[1] + bbox[3]) / 2
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = 111.0 * math.cos(math.radians(lat_mid))
+    total_area_km2 = lat_diff * km_per_deg_lat * lon_diff * km_per_deg_lon
+    flood_area_km2 = total_area_km2 * result.flood_probability
+
     # Also store as a real risk assessment in the database
     from database.models import RiskAssessmentRecord, get_session
     session = get_session()
@@ -664,8 +675,8 @@ def run_live_analysis(region_id: int):
             region_id=region.id,
             timestamp=datetime.fromisoformat(result.timestamp),
             risk_level=result.detected_risk_level,
-            flood_area_km2=0,  # Not from satellite
-            total_area_km2=0,
+            flood_area_km2=round(flood_area_km2, 2),
+            total_area_km2=round(total_area_km2, 2),
             flood_percentage=result.flood_probability,
             confidence_score=result.confidence_score,
             change_type="LIVE_DETECTION",
@@ -1041,12 +1052,19 @@ def get_compound_risk(region_id: int):
         # Get fusion data for compound risk inputs
         fusion = _get_fusion().fuse_sensors(lat, lon, region.name)
         risk = db.get_latest_risk(region_id)
+        # Fetch LIVE rainfall and elevation for accurate compound risk
+        from processing.external_data import ExternalDataIntegrator
+        ext = ExternalDataIntegrator()
+        rainfall = ext.fetch_rainfall(lat, lon, days=7)
+        elevation = ext.fetch_elevation(lat, lon)
         result = _get_compound().compute_compound_risk(
             flood_probability=risk.flood_percentage if risk else 0.0,
             flood_confidence=risk.confidence_score if risk else 0.0,
             vegetation_stress=fusion.vegetation_stress,
             thermal_anomaly=fusion.thermal_anomaly,
             soil_saturation=fusion.soil_saturation,
+            rainfall_7d_mm=rainfall.get("total_rainfall_mm", 0),
+            elevation_m=elevation.get("mean_elevation_m", 100),
             region_name=region.name,
         )
         return result.to_dict()
@@ -1106,15 +1124,25 @@ def _get_financial():
 def get_financial_impact(region_id: int):
     """Estimate financial impact for a region's flood risk."""
     try:
+        import math
         region = db.get_region(region_id)
         if not region:
             return {"error": f"Region {region_id} not found"}
         risk = db.get_latest_risk(region_id)
+        flood_area = risk.flood_area_km2 if risk else 0.0
+        total_area = risk.total_area_km2 if risk else 100.0
+        flood_prob = risk.flood_percentage if risk else 0.1
+        # Fallback: compute from bounding box if stored area is 0
+        if (flood_area == 0 or total_area == 0) and risk and risk.flood_percentage > 0:
+            bbox = region.bbox
+            lat_mid = (bbox[1] + bbox[3]) / 2
+            total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
+            flood_area = total_area * risk.flood_percentage
         result = _get_financial().estimate_impact(
             risk_level=risk.risk_level if risk else "MEDIUM",
-            flood_area_km2=risk.flood_area_km2 if risk else 0.0,
-            total_area_km2=risk.total_area_km2 if risk else 100.0,
-            flood_probability=risk.flood_percentage if risk else 0.1,
+            flood_area_km2=flood_area,
+            total_area_km2=total_area,
+            flood_probability=flood_prob,
             region_name=region.name,
         )
         return result.to_dict()
