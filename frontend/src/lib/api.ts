@@ -101,6 +101,128 @@ export async function explainLocation(lat: number, lon: number) {
     return safeFetch(`${API}/explain/location?lat=${lat}&lon=${lon}`);
 }
 
+// --- Predictive Forecasting ---
+
+export interface MonthlyForecast {
+    month: string;
+    month_name: string;
+    risk_probability: number;
+    risk_level: string;
+    confidence_lower: number;
+    confidence_upper: number;
+    seasonal_factor: number;
+    precipitation_forecast_mm: number;
+    drivers: string[];
+}
+
+export interface ForecastData {
+    region: string;
+    generated_at: string;
+    horizon_months: number;
+    monthly_forecast: MonthlyForecast[];
+    summary: {
+        peak_risk_month: string;
+        peak_probability: number;
+        overall_trend: string;
+        avg_risk_probability: number;
+    };
+}
+
+export async function fetchForecast(regionId: number, horizon: number = 6): Promise<ForecastData | null> {
+    return safeFetch(`${API}/forecast/${regionId}?horizon=${horizon}`);
+}
+
+export async function forecastLocation(lat: number, lon: number, name?: string): Promise<ForecastData | null> {
+    try {
+        const res = await fetch(`${API}/forecast/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch {
+        return null;
+    }
+}
+
+// --- NLG Summaries ---
+
+export interface NLGSummary {
+    narrative: string;
+    highlights: string[];
+    risk_trend: string;
+    generated_at: string;
+    engine: string;
+    trend_narrative?: string;
+}
+
+export async function fetchNLGSummary(regionId: number): Promise<NLGSummary | null> {
+    return safeFetch(`${API}/nlg/summary/${regionId}`);
+}
+
+// --- Multi-Sensor Fusion (Phase 2A) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchFusionAnalysis(regionId: number): Promise<any> {
+    return safeFetch(`${API}/fusion/${regionId}`);
+}
+
+// --- Compound Risk (Phase 2B) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchCompoundRisk(regionId: number): Promise<any> {
+    return safeFetch(`${API}/compound-risk/${regionId}`);
+}
+
+// --- Asset Scoring (Phase 3A) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchAssetScores(regionId: number): Promise<any> {
+    return safeFetch(`${API}/assets/${regionId}`);
+}
+
+// --- Financial Impact (Phase 3B) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchFinancialImpact(regionId: number): Promise<any> {
+    return safeFetch(`${API}/financial/${regionId}`);
+}
+
+// --- ACD Monitoring (Phase 4) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchACDStatus(): Promise<any> {
+    return safeFetch(`${API}/acd/status`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchACDAlerts(): Promise<any> {
+    return safeFetch(`${API}/acd/alerts`);
+}
+
+// --- Reports (Phase 5A) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function generateReport(reportType: string, regionId: number): Promise<any> {
+    return safeFetch(`${API}/reports/${reportType}/${regionId}`);
+}
+
+// --- Feedback (Phase 5B) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function submitFeedback(data: any): Promise<any> {
+    try {
+        const res = await fetch(`${API}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchFeedbackStats(): Promise<any> {
+    return safeFetch(`${API}/feedback/stats`);
+}
+
 export interface GeoResult {
     display_name: string;
     lat: number;
