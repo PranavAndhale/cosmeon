@@ -726,9 +726,9 @@ export default function GeospatialEngine() {
               <div className="p-6 border-b border-white/10 bg-black/40 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(latestRisk.risk_level) }}>
+                    <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>
                       <AlertTriangle size={16} />
-                      {latestRisk.risk_level} RISK
+                      {liveDetection?.detected_risk_level || latestRisk.risk_level} RISK
                       <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
                         {latestRisk.change_type}
                       </span>
@@ -745,11 +745,11 @@ export default function GeospatialEngine() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
-                    <span className={`text-xl font-bold ${textMono} text-white`}>{latestRisk.flood_area_km2.toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
+                    <span className={`text-xl font-bold ${textMono} text-white`}>{(liveDetection?.flood_area_km2 ?? latestRisk.flood_area_km2).toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
                   </div>
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Confidence</span>
-                    <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{(latestRisk.confidence_score * 100).toFixed(0)}%</span>
+                    <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{((liveDetection?.confidence_score ?? latestRisk.confidence_score) * 100).toFixed(0)}%</span>
                   </div>
                 </div>
 
@@ -757,11 +757,11 @@ export default function GeospatialEngine() {
                   <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                    <span style={{ color: riskColor(latestRisk.risk_level) }}>{(latestRisk.flood_percentage * 100).toFixed(1)}%</span>
+                    <span style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>{((liveDetection?.flood_probability ?? latestRisk.flood_percentage) * 100).toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Total Monitored Area</span>
-                    <span className="text-white">{latestRisk.total_area_km2.toFixed(0)} km²</span>
+                    <span className="text-white">{(liveDetection?.total_area_km2 ?? latestRisk.total_area_km2).toFixed(0)} km²</span>
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Water Change</span>

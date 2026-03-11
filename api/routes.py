@@ -978,8 +978,8 @@ def get_nlg_summary_location(body: LocationRequest):
             "risk_level": detection_data.get("detected_risk_level", "UNKNOWN") if detection_data else "UNKNOWN",
             "flood_percentage": detection_data.get("flood_probability", 0) if detection_data else 0,
             "confidence_score": detection_data.get("confidence_score", 0) if detection_data else 0,
-            "flood_area_km2": 0,
-            "total_area_km2": 0,
+            "flood_area_km2": detection_data.get("flood_area_km2", 0) if detection_data else 0,
+            "total_area_km2": detection_data.get("total_area_km2", 0) if detection_data else 0,
         }
 
         engine = _get_nlg_engine()
@@ -1225,18 +1225,38 @@ def get_financial_impact(region_id: int):
         region = db.get_region(region_id)
         if not region:
             return {"error": f"Region {region_id} not found"}
+
+        # Prefer live detection data (freshest), fall back to DB risk
+        latest_det = analysis_engine.get_latest_detection(region_id)
         risk = db.get_latest_risk(region_id)
-        flood_area = risk.flood_area_km2 if risk else 0.0
-        total_area = risk.total_area_km2 if risk else 100.0
-        flood_prob = risk.flood_percentage if risk else 0.1
-        # Fallback: compute from bounding box if stored area is 0
-        if (flood_area == 0 or total_area == 0) and risk and risk.flood_percentage > 0:
+
+        if latest_det and latest_det.get("flood_area_km2", 0) > 0:
+            flood_area = latest_det["flood_area_km2"]
+            total_area = latest_det["total_area_km2"]
+            flood_prob = latest_det["flood_probability"]
+            risk_level = latest_det["detected_risk_level"]
+        elif risk:
+            flood_area = risk.flood_area_km2
+            total_area = risk.total_area_km2
+            flood_prob = risk.flood_percentage if risk.flood_percentage else 0.1
+            risk_level = risk.risk_level
+            # Fallback: compute from bounding box if stored area is 0
+            if (flood_area == 0 or total_area == 0):
+                bbox = region.bbox
+                lat_mid = (bbox[1] + bbox[3]) / 2
+                total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
+                flood_area = total_area * flood_prob
+        else:
+            # No detection or risk data — compute from bbox with default probability
             bbox = region.bbox
             lat_mid = (bbox[1] + bbox[3]) / 2
             total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
-            flood_area = total_area * risk.flood_percentage
+            flood_prob = 0.1
+            flood_area = total_area * flood_prob
+            risk_level = "MEDIUM"
+
         result = _get_financial().estimate_impact(
-            risk_level=risk.risk_level if risk else "MEDIUM",
+            risk_level=risk_level,
             flood_area_km2=flood_area,
             total_area_km2=total_area,
             flood_probability=flood_prob,
