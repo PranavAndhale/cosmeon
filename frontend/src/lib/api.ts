@@ -112,6 +112,7 @@ export interface MonthlyForecast {
     confidence_upper: number;
     seasonal_factor: number;
     precipitation_forecast_mm: number;
+    assessment_details?: Record<string, any>;
     drivers: string[];
 }
 
@@ -351,6 +352,10 @@ export interface MonthlyTrend {
     max_flood_pct: number;
     avg_flood_area_km2: number;
     max_flood_area_km2: number;
+    avg_water_change_pct: number;
+    max_water_change_pct: number;
+    avg_vegetation_stress: number;
+    max_vegetation_stress: number;
     avg_confidence: number;
     dominant_risk_level: string;
     risk_distribution: { LOW: number; MEDIUM: number; HIGH: number; CRITICAL: number };

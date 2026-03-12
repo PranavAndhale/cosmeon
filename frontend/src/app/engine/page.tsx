@@ -18,14 +18,17 @@ interface Region {
 }
 
 interface RiskAssessment {
+  id: number;
+  region_id: number;
+  timestamp: string;
   risk_level: string;
   flood_area_km2: number;
   total_area_km2: number;
   flood_percentage: number;
   confidence_score: number;
-  change_type: string;
+  change_type?: string;
   water_change_pct: number;
-  timestamp: string;
+  assessment_details?: Record<string, any>;
 }
 
 interface ChangeEvent {
@@ -486,16 +489,20 @@ export default function GeospatialEngine() {
     riskHistory
       .slice()
       .reverse()
-      .map(a => ({
-        date: a.timestamp ? new Date(a.timestamp).toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : "",
-        flood: Math.round(a.flood_percentage * 100 * 100) / 100,
-        confidence: Math.round(a.confidence_score * 100),
-        water_change: Math.round(a.water_change_pct * 100 * 100) / 100,
-      }))
+      .map(a => {
+        const vegStress = (a.assessment_details as any)?.vegetation_stress || 0;
+        return {
+          date: a.timestamp ? new Date(a.timestamp).toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : "",
+          flood: Math.round(a.flood_percentage * 100 * 100) / 100,
+          confidence: Math.round(a.confidence_score * 100),
+          water_change: Math.round(a.water_change_pct * 100 * 100) / 100,
+          vegetation_stress: Math.round(vegStress * 100 * 100) / 100,
+        };
+      })
     , [riskHistory]);
 
   // ── Choose chart data key based on active orb ──
-  const chartKey = activeOrb === "flood" ? "flood" : activeOrb === "infra" ? "water_change" : "confidence";
+  const chartKey = activeOrb === "flood" ? "flood" : activeOrb === "infra" ? "water_change" : "vegetation_stress";
   const primaryColor = currentOrb.color;
 
   return (
@@ -2590,14 +2597,14 @@ export default function GeospatialEngine() {
 
                     {/* Flood % over time */}
                     <div className="bg-[#151A22] border border-white/5 rounded-xl p-6">
-                      <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Flood Coverage % — Monthly Average vs Peak</h3>
+                      <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">{currentOrb.chartLabel} % — Monthly Average vs Peak</h3>
                       <div className="h-[200px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                             <defs>
                               <linearGradient id="trendGradAvg" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.3} />
-                                <stop offset="95%" stopColor="#00E5FF" stopOpacity={0} />
+                                <stop offset="5%" stopColor={primaryColor} stopOpacity={0.3} />
+                                <stop offset="95%" stopColor={primaryColor} stopOpacity={0} />
                               </linearGradient>
                               <linearGradient id="trendGradPeak" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
@@ -2608,8 +2615,8 @@ export default function GeospatialEngine() {
                             <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                             <YAxis tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                             <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }} formatter={(v) => [`${Number(v).toFixed(1)}%`]} />
-                            <Area type="monotone" dataKey="avg_flood_pct" stroke="#00E5FF" fill="url(#trendGradAvg)" strokeWidth={2} name="Avg %" dot={false} />
-                            <Area type="monotone" dataKey="max_flood_pct" stroke="#f97316" fill="url(#trendGradPeak)" strokeWidth={1.5} strokeDasharray="4 2" name="Peak %" dot={false} />
+                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'avg_flood_pct' : currentOrb.id === 'infra' ? 'avg_water_change_pct' : 'avg_vegetation_stress'} stroke={primaryColor} fill="url(#trendGradAvg)" strokeWidth={2} name="Avg %" dot={false} />
+                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'max_flood_pct' : currentOrb.id === 'infra' ? 'max_water_change_pct' : 'max_vegetation_stress'} stroke="#f97316" fill="url(#trendGradPeak)" strokeWidth={1.5} strokeDasharray="4 2" name="Peak %" dot={false} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -2618,7 +2625,7 @@ export default function GeospatialEngine() {
                     {/* Area affected + Confidence side by side */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
-                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Avg Flood Area km²</h3>
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">{currentOrb.id === 'flood' ? 'Avg Flood Area km²' : currentOrb.id === 'infra' ? 'Avg Exposure Area km²' : 'Avg Stress Area km²'}</h3>
                         <div className="h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
@@ -2626,7 +2633,7 @@ export default function GeospatialEngine() {
                               <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                               <YAxis tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                               <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(0)} km²`]} />
-                              <Bar dataKey="avg_flood_area_km2" fill="#00E5FF" fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Area km²" />
+                              <Bar dataKey="avg_flood_area_km2" fill={primaryColor} fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Area km²" />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -2652,7 +2659,7 @@ export default function GeospatialEngine() {
                       <table className="w-full text-[12px] font-mono">
                         <thead>
                           <tr className="border-b border-white/5 bg-black/20">
-                            {['Month', 'Dominant Risk', 'Avg Flood %', 'Peak Flood %', 'Avg Area km²', 'Confidence', 'Assessments'].map(h => (
+                            {['Month', 'Dominant Risk', `Avg ${currentOrb.chartLabel}`, `Peak ${currentOrb.chartLabel}`, 'Avg Area km²', 'Confidence', 'Assessments'].map(h => (
                               <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-widest text-gray-600">{h}</th>
                             ))}
                           </tr>
@@ -2660,12 +2667,14 @@ export default function GeospatialEngine() {
                         <tbody>
                           {[...trendData.trend].reverse().map((m, i) => {
                             const rc = m.dominant_risk_level === 'CRITICAL' ? '#ef4444' : m.dominant_risk_level === 'HIGH' ? '#f97316' : m.dominant_risk_level === 'MEDIUM' ? '#eab308' : '#22c55e';
+                            const avgValue = currentOrb.id === 'flood' ? m.avg_flood_pct : currentOrb.id === 'infra' ? (m.avg_water_change_pct || m.avg_flood_pct) : (m.avg_vegetation_stress || m.avg_flood_pct);
+                            const maxValue = currentOrb.id === 'flood' ? m.max_flood_pct : currentOrb.id === 'infra' ? (m.max_water_change_pct || m.max_flood_pct) : (m.max_vegetation_stress || m.max_flood_pct);
                             return (
                               <tr key={m.month} className={`border-b border-white/5 ${i % 2 === 0 ? 'bg-black/10' : ''} hover:bg-white/3 transition-colors`}>
                                 <td className="px-4 py-2.5 text-gray-300">{m.month_label}</td>
                                 <td className="px-4 py-2.5"><span className="font-bold" style={{ color: rc }}>{m.dominant_risk_level}</span></td>
-                                <td className="px-4 py-2.5 text-gray-400">{m.avg_flood_pct.toFixed(1)}%</td>
-                                <td className="px-4 py-2.5 text-gray-400">{m.max_flood_pct.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-400">{avgValue.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-400">{maxValue.toFixed(1)}%</td>
                                 <td className="px-4 py-2.5 text-gray-400">{m.avg_flood_area_km2.toFixed(0)}</td>
                                 <td className="px-4 py-2.5 text-gray-400">{m.avg_confidence.toFixed(1)}%</td>
                                 <td className="px-4 py-2.5 text-gray-500">{m.assessment_count}</td>

@@ -336,6 +336,13 @@ class DatabaseManager:
             dominant = max(risk_counts, key=lambda k: risk_counts[k])
             from datetime import datetime as _dt
             label = _dt.strptime(month_key, "%Y-%m").strftime("%b %Y")
+            # Helper to safely extract vegetation stress from JSON assessment_details
+            def get_veg(record):
+                details = record.assessment_details or {}
+                if isinstance(details, dict):
+                    return float(details.get("vegetation_stress", 0))
+                return 0.0
+
             result.append({
                 "month": month_key,
                 "month_label": label,
@@ -343,6 +350,10 @@ class DatabaseManager:
                 "max_flood_pct": round(max(r.flood_percentage for r in records) * 100, 2),
                 "avg_flood_area_km2": round(sum(r.flood_area_km2 for r in records) / len(records), 1),
                 "max_flood_area_km2": round(max(r.flood_area_km2 for r in records), 1),
+                "avg_water_change_pct": round(sum(r.water_change_pct for r in records) / len(records) * 100, 2),
+                "max_water_change_pct": round(max(r.water_change_pct for r in records) * 100, 2),
+                "avg_vegetation_stress": round(sum(get_veg(r) for r in records) / len(records) * 100, 2),
+                "max_vegetation_stress": round(max(get_veg(r) for r in records) * 100, 2),
                 "avg_confidence": round(sum(r.confidence_score for r in records) / len(records) * 100, 1),
                 "dominant_risk_level": dominant,
                 "risk_distribution": risk_counts,
