@@ -21,10 +21,8 @@ body {
   font-family: var(--font-sans);
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  /* Full screen map application */
-  width: 100vw;
-  height: 100vh;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* Base interactive resets */
