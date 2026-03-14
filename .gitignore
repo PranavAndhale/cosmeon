@@ -30,3 +30,6 @@ static/
 
 # Claude Code
 .claude/
+
+# Legacy frontend (not deployed)
+frontend_old/
