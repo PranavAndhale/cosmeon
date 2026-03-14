@@ -1,21 +1,40 @@
-MIT License
+PROPRIETARY LICENSE
 
-Copyright (c) 2026 Pranav Andhale
+Copyright (c) 2026 Pranav Andhale. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software and its source code (the "Software") are the exclusive property
+of Pranav Andhale and are protected by copyright law and international treaties.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+RESTRICTIONS
+------------
+You may NOT, without prior written permission from the copyright holder:
 
+  1. Copy, reproduce, or duplicate the Software or any part of it.
+  2. Modify, adapt, translate, or create derivative works based on the Software.
+  3. Distribute, publish, sublicense, sell, or transfer the Software or any
+     portion of it to any third party.
+  4. Use the Software or any part of it for commercial purposes.
+  5. Reverse engineer, decompile, or disassemble the Software.
+
+PERMITTED USE
+-------------
+You may view this source code solely for personal educational and reference
+purposes. No other rights are granted.
+
+COLLABORATION
+-------------
+Contributions, bug reports, and feature suggestions are welcome via the
+official GitHub repository:
+
+  https://github.com/PranavAndhale/cosmeon
+
+For direct collaboration inquiries, contact:
+
+  pranavandhale07@gmail.com
+
+DISCLAIMER
+----------
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF OR INABILITY TO USE
+THIS SOFTWARE.
