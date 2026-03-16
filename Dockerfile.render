@@ -16,6 +16,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system libraries required by XGBoost/LightGBM (OpenMP runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies (web-only, no GDAL/PyTorch)
 COPY requirements-web.txt .
 RUN pip install --no-cache-dir -r requirements-web.txt
