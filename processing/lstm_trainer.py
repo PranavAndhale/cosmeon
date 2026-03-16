@@ -30,12 +30,34 @@ SEQ_LEN = 30
 RISK_LABELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 DEFAULT_REGIONS = [
-    {"name": "Bihar, India", "lat": 26.0, "lon": 85.5, "elevation": 55},
-    {"name": "Jakarta, Indonesia", "lat": -6.2, "lon": 106.8, "elevation": 8},
-    {"name": "Bremen, Germany", "lat": 53.1, "lon": 8.8, "elevation": 12},
-    {"name": "Navi Mumbai, India", "lat": 19.1, "lon": 73.0, "elevation": 14},
-    {"name": "Sao Paulo, Brazil", "lat": -23.55, "lon": -46.6, "elevation": 760},
-    {"name": "Dhaka, Bangladesh", "lat": 23.75, "lon": 90.4, "elevation": 8},
+    # South Asia — monsoon-driven, excellent GloFAS coverage
+    {"name": "Bihar, India",          "lat": 26.0,   "lon": 85.5,    "elevation": 55},
+    {"name": "Dhaka, Bangladesh",     "lat": 23.75,  "lon": 90.4,    "elevation": 8},
+    {"name": "Navi Mumbai, India",    "lat": 19.1,   "lon": 73.0,    "elevation": 14},
+    {"name": "Kolkata, India",        "lat": 22.6,   "lon": 88.4,    "elevation": 6},
+    {"name": "Assam, India",          "lat": 26.2,   "lon": 92.5,    "elevation": 55},
+    {"name": "Sylhet, Bangladesh",    "lat": 24.9,   "lon": 91.9,    "elevation": 15},
+    # Southeast Asia
+    {"name": "Jakarta, Indonesia",    "lat": -6.2,   "lon": 106.8,   "elevation": 8},
+    {"name": "Bangkok, Thailand",     "lat": 13.75,  "lon": 100.5,   "elevation": 2},
+    {"name": "Ho Chi Minh City",      "lat": 10.8,   "lon": 106.7,   "elevation": 5},
+    {"name": "Manila, Philippines",   "lat": 14.6,   "lon": 121.0,   "elevation": 15},
+    # Europe — Rhine/Danube basin
+    {"name": "Bremen, Germany",       "lat": 53.1,   "lon": 8.8,     "elevation": 12},
+    {"name": "Rotterdam, Netherlands","lat": 51.9,   "lon": 4.5,     "elevation": 0},
+    {"name": "Budapest, Hungary",     "lat": 47.5,   "lon": 19.0,    "elevation": 105},
+    {"name": "Venice, Italy",         "lat": 45.4,   "lon": 12.3,    "elevation": 1},
+    # Americas
+    {"name": "Sao Paulo, Brazil",     "lat": -23.55, "lon": -46.6,   "elevation": 760},
+    {"name": "Manaus, Brazil",        "lat": -3.1,   "lon": -60.0,   "elevation": 92},
+    {"name": "New Orleans, USA",      "lat": 29.95,  "lon": -90.07,  "elevation": 0},
+    {"name": "Houston, USA",          "lat": 29.76,  "lon": -95.37,  "elevation": 13},
+    # East Asia — Yangtze basin
+    {"name": "Wuhan, China",          "lat": 30.6,   "lon": 114.3,   "elevation": 23},
+    {"name": "Chongqing, China",      "lat": 29.6,   "lon": 106.5,   "elevation": 259},
+    # Africa
+    {"name": "Khartoum, Sudan",       "lat": 15.55,  "lon": 32.53,   "elevation": 380},
+    {"name": "Lagos, Nigeria",        "lat": 6.45,   "lon": 3.4,     "elevation": 2},
 ]
 
 

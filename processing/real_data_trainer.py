@@ -45,7 +45,7 @@ class RealDataTrainer:
         lat: float,
         lon: float,
         elevation: float = 100.0,
-        days_history: int = 210,
+        days_history: int = 365,
     ) -> list[dict]:
         """
         Build training dataset from real historical data.
@@ -57,7 +57,8 @@ class RealDataTrainer:
             lat: Latitude of region center
             lon: Longitude of region center
             elevation: Mean elevation of region
-            days_history: How many days to look back (max ~210 for Flood API)
+            days_history: How many days to look back (uses start/end date
+                          API so supports up to multi-year history)
 
         Returns:
             List of training samples with ground-truth labels
@@ -68,7 +69,12 @@ class RealDataTrainer:
         )
 
         # ── 1. Fetch discharge data (ground truth for labels) ──
-        discharge_data = self._fetch_discharge_history(lat, lon, days_history)
+        # Use start/end date for unlimited history (vs past_days cap of 210)
+        end_date = (datetime.utcnow() - timedelta(days=3)).strftime("%Y-%m-%d")
+        start_date = (datetime.utcnow() - timedelta(days=days_history + 3)).strftime("%Y-%m-%d")
+        discharge_data = self._fetch_discharge_history(
+            lat, lon, start_date=start_date, end_date=end_date
+        )
         if not discharge_data["dates"]:
             logger.warning("No discharge data available. Cannot build ground-truth labels.")
             return self._fallback_weather_only(lat, lon, elevation, days_history)
@@ -242,19 +248,39 @@ class RealDataTrainer:
     # ── Data fetching helpers ──
 
     def _fetch_discharge_history(
-        self, lat: float, lon: float, past_days: int
+        self,
+        lat: float,
+        lon: float,
+        past_days: int = 210,
+        start_date: str = None,
+        end_date: str = None,
     ) -> dict:
-        """Fetch daily river discharge from GloFAS Flood API."""
+        """
+        Fetch daily river discharge from GloFAS Flood API.
+
+        Supports two modes:
+          - start_date + end_date: full archive access (years of history)
+          - past_days: convenience mode, capped at 210 by the API
+        """
         try:
-            # Flood API supports past_days up to ~210
-            capped_days = min(past_days, 210)
-            params = {
-                "latitude": lat,
-                "longitude": lon,
-                "daily": "river_discharge,river_discharge_mean,river_discharge_max",
-                "past_days": capped_days,
-                "forecast_days": 0,
-            }
+            if start_date and end_date:
+                # Archive mode — supports unlimited history back to ~1984
+                params = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "daily": "river_discharge,river_discharge_mean,river_discharge_max",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                }
+            else:
+                # Legacy past_days mode (max 210)
+                params = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "daily": "river_discharge,river_discharge_mean,river_discharge_max",
+                    "past_days": min(past_days, 210),
+                    "forecast_days": 0,
+                }
             response = requests.get(FLOOD_API, params=params, timeout=20)
             response.raise_for_status()
             data = response.json()
@@ -494,7 +520,7 @@ class RealDataTrainer:
                 lat=region["lat"],
                 lon=region["lon"],
                 elevation=region.get("elevation", 100),
-                days_history=210,
+                days_history=365,  # 365 days via archive API (was 210)
             )
             all_data.extend(data)
 

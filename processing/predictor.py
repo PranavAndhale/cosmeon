@@ -29,10 +29,24 @@ from sklearn.preprocessing import StandardScaler
 
 from config.settings import PROCESSED_DIR
 
+# ── Optional advanced ensemble models (graceful fallback if not installed) ──
+try:
+    from xgboost import XGBClassifier as _XGBClassifier
+    _HAS_XGB = True
+except ImportError:
+    _HAS_XGB = False
+
+try:
+    from lightgbm import LGBMClassifier as _LGBMClassifier
+    _HAS_LGBM = True
+except ImportError:
+    _HAS_LGBM = False
+
 logger = logging.getLogger("cosmeon.processing.predictor")
 
 MODEL_PATH = PROCESSED_DIR / "flood_predictor.joblib"
 SCALER_PATH = PROCESSED_DIR / "flood_scaler.joblib"
+LGBM_MODEL_PATH = PROCESSED_DIR / "flood_predictor_lgbm.joblib"
 
 
 @dataclass
@@ -80,18 +94,15 @@ class FloodPredictor:
     LSTM_WEIGHT = 0.4
 
     def __init__(self):
-        self.model = GradientBoostingClassifier(
-            n_estimators=200,
-            max_depth=4,
-            learning_rate=0.1,
-            min_samples_split=5,
-            subsample=0.8,
-            random_state=42,
-        )
+        self.model = self._build_primary_model()
         self.scaler = StandardScaler()
         self.is_trained = False
         self.risk_labels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
         self._training_metrics = {}
+        # Secondary LightGBM model for soft-voting ensemble
+        self._lgbm_model = self._build_lgbm_model()
+        # Cached averaged feature importances across all trained models
+        self._fi = np.ones(len(self.FEATURE_NAMES)) / len(self.FEATURE_NAMES)
 
         # LSTM model (optional ensemble enhancement)
         self._lstm_manager = None
@@ -100,13 +111,76 @@ class FloodPredictor:
             self._lstm_manager = LSTMFloodManager()
             logger.info("LSTM model loaded (ensemble mode available)")
         except Exception as e:
-            logger.info("LSTM not available: %s (GBM-only mode)", e)
+            logger.info("LSTM not available: %s (primary-only mode)", e)
 
         # Try loading a persisted model on init
         if self._load_persisted_model():
             logger.info("Loaded persisted predictor model from disk")
         else:
             logger.info("FloodPredictor initialized (no persisted model found)")
+
+    # ── Model builders ──
+
+    def _build_primary_model(self):
+        """Build primary classifier: XGBoost if available, else sklearn GBM fallback."""
+        if _HAS_XGB:
+            logger.info("Using XGBClassifier as primary model (better accuracy)")
+            return _XGBClassifier(
+                n_estimators=300,
+                max_depth=5,
+                learning_rate=0.08,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_weight=3,
+                reg_alpha=0.1,
+                reg_lambda=1.0,
+                random_state=42,
+                eval_metric="mlogloss",
+                verbosity=0,
+            )
+        logger.info("XGBoost not installed — using GradientBoostingClassifier")
+        return GradientBoostingClassifier(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.1,
+            min_samples_split=5,
+            subsample=0.8,
+            random_state=42,
+        )
+
+    def _build_lgbm_model(self):
+        """Build secondary LightGBM model for ensemble blending."""
+        if _HAS_LGBM:
+            try:
+                logger.info("LightGBM available — will blend predictions for higher accuracy")
+                return _LGBMClassifier(
+                    n_estimators=300,
+                    num_leaves=31,
+                    learning_rate=0.08,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    min_child_samples=20,
+                    reg_alpha=0.1,
+                    reg_lambda=1.0,
+                    random_state=42,
+                    verbose=-1,
+                )
+            except Exception as e:
+                logger.warning("LightGBM init failed (non-critical): %s", e)
+        return None
+
+    def _compute_feature_importances(self) -> np.ndarray:
+        """Compute normalized, averaged feature importances across all trained models."""
+        all_imp = []
+        for mdl in [self.model, self._lgbm_model]:
+            if mdl is not None and hasattr(mdl, "feature_importances_"):
+                imp = np.array(mdl.feature_importances_, dtype=float)
+                total = imp.sum()
+                if total > 1e-10:
+                    all_imp.append(imp / total)
+        if all_imp:
+            return np.mean(all_imp, axis=0)
+        return np.ones(len(self.FEATURE_NAMES)) / len(self.FEATURE_NAMES)
 
     # ── Feature extraction ──
 
@@ -181,12 +255,34 @@ class FloodPredictor:
         """
         if regions is None:
             regions = [
-                {"name": "Bihar, India", "lat": 26.0, "lon": 85.5, "elevation": 55},
-                {"name": "Jakarta, Indonesia", "lat": -6.2, "lon": 106.8, "elevation": 8},
-                {"name": "Bremen, Germany", "lat": 53.1, "lon": 8.8, "elevation": 12},
-                {"name": "Navi Mumbai, India", "lat": 19.1, "lon": 73.0, "elevation": 14},
-                {"name": "São Paulo, Brazil", "lat": -23.55, "lon": -46.6, "elevation": 760},
-                {"name": "Dhaka, Bangladesh", "lat": 23.75, "lon": 90.4, "elevation": 8},
+                # South Asia — monsoon-driven, excellent GloFAS coverage
+                {"name": "Bihar, India",          "lat": 26.0,   "lon": 85.5,    "elevation": 55},
+                {"name": "Dhaka, Bangladesh",     "lat": 23.75,  "lon": 90.4,    "elevation": 8},
+                {"name": "Navi Mumbai, India",    "lat": 19.1,   "lon": 73.0,    "elevation": 14},
+                {"name": "Kolkata, India",        "lat": 22.6,   "lon": 88.4,    "elevation": 6},
+                {"name": "Assam, India",          "lat": 26.2,   "lon": 92.5,    "elevation": 55},
+                {"name": "Sylhet, Bangladesh",    "lat": 24.9,   "lon": 91.9,    "elevation": 15},
+                # Southeast Asia
+                {"name": "Jakarta, Indonesia",    "lat": -6.2,   "lon": 106.8,   "elevation": 8},
+                {"name": "Bangkok, Thailand",     "lat": 13.75,  "lon": 100.5,   "elevation": 2},
+                {"name": "Ho Chi Minh City",      "lat": 10.8,   "lon": 106.7,   "elevation": 5},
+                {"name": "Manila, Philippines",   "lat": 14.6,   "lon": 121.0,   "elevation": 15},
+                # Europe — Rhine/Danube basin, excellent river data
+                {"name": "Bremen, Germany",       "lat": 53.1,   "lon": 8.8,     "elevation": 12},
+                {"name": "Rotterdam, Netherlands","lat": 51.9,   "lon": 4.5,     "elevation": 0},
+                {"name": "Budapest, Hungary",     "lat": 47.5,   "lon": 19.0,    "elevation": 105},
+                {"name": "Venice, Italy",         "lat": 45.4,   "lon": 12.3,    "elevation": 1},
+                # Americas
+                {"name": "São Paulo, Brazil",     "lat": -23.55, "lon": -46.6,   "elevation": 760},
+                {"name": "Manaus, Brazil",        "lat": -3.1,   "lon": -60.0,   "elevation": 92},
+                {"name": "New Orleans, USA",      "lat": 29.95,  "lon": -90.07,  "elevation": 0},
+                {"name": "Houston, USA",          "lat": 29.76,  "lon": -95.37,  "elevation": 13},
+                # East Asia — Yangtze basin
+                {"name": "Wuhan, China",          "lat": 30.6,   "lon": 114.3,   "elevation": 23},
+                {"name": "Chongqing, China",      "lat": 29.6,   "lon": 106.5,   "elevation": 259},
+                # Africa
+                {"name": "Khartoum, Sudan",       "lat": 15.55,  "lon": 32.53,   "elevation": 380},
+                {"name": "Lagos, Nigeria",        "lat": 6.45,   "lon": 3.4,     "elevation": 2},
             ]
 
         try:
@@ -278,6 +374,18 @@ class FloodPredictor:
         self.model.fit(X_train_scaled, y_train, sample_weight=sample_weights)
         self.is_trained = True
 
+        # ── Train LightGBM secondary model (ensemble boost) ──
+        if self._lgbm_model is not None:
+            try:
+                self._lgbm_model.fit(X_train_scaled, y_train, sample_weight=sample_weights)
+                logger.info("LightGBM secondary model trained — ensemble blending active")
+            except Exception as e:
+                logger.warning("LightGBM training failed (non-critical, GBM-only mode): %s", e)
+                self._lgbm_model = None
+
+        # ── Cache averaged feature importances ──
+        self._fi = self._compute_feature_importances()
+
         # ── Evaluate ──
         train_acc = self.model.score(X_train_scaled, y_train)
         test_acc = self.model.score(X_test_scaled, y_test)
@@ -302,10 +410,10 @@ class FloodPredictor:
         )
         logger.info("Classification Report:\n%s", report_str)
 
-        # ── Feature importances ──
+        # ── Feature importances (averaged across all trained models) ──
         importances = {
             name: round(float(imp), 4)
-            for name, imp in zip(self.FEATURE_NAMES, self.model.feature_importances_)
+            for name, imp in zip(self.FEATURE_NAMES, self._fi)
         }
         logger.info("Feature importances: %s", importances)
 
@@ -359,11 +467,29 @@ class FloodPredictor:
         features = self._extract_features(flood_history, external_factors)
         features_scaled = self.scaler.transform(features)
 
-        # GBM prediction
-        gbm_proba = self.model.predict_proba(features_scaled)[0]
+        # Primary model prediction (XGBoost or GBM fallback)
+        primary_proba = self.model.predict_proba(features_scaled)[0]
+
+        # Blend with LightGBM if available (soft-voting ensemble)
+        if self._lgbm_model is not None:
+            try:
+                lgbm_proba = self._lgbm_model.predict_proba(features_scaled)[0]
+                if len(lgbm_proba) == len(primary_proba) == 4:
+                    gbm_proba = 0.55 * primary_proba + 0.45 * lgbm_proba
+                else:
+                    gbm_proba = primary_proba
+            except Exception:
+                gbm_proba = primary_proba
+        else:
+            gbm_proba = primary_proba
 
         # LSTM ensemble (if available and trained)
-        model_version = "gbm_v2"
+        if _HAS_XGB and self._lgbm_model is not None:
+            model_version = "ensemble_xgb_lgbm_v1"
+        elif _HAS_XGB:
+            model_version = "xgb_v1"
+        else:
+            model_version = "gbm_v2"
         lstm_proba = None
         lat = external_factors.get("_lat") if external_factors else None
         lon = external_factors.get("_lon") if external_factors else None
@@ -396,10 +522,9 @@ class FloodPredictor:
         sorted_proba = sorted(final_proba, reverse=True)
         confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
 
-        importances = self.model.feature_importances_
         contributing = {
             name: round(float(imp), 3)
-            for name, imp in zip(self.FEATURE_NAMES, importances)
+            for name, imp in zip(self.FEATURE_NAMES, self._fi)
         }
 
         prediction = FloodPrediction(
@@ -492,8 +617,8 @@ class FloodPredictor:
             for name, val in zip(self.FEATURE_NAMES, raw_values)
         }
 
-        # Feature importances from the trained model
-        importances = self.model.feature_importances_
+        # Feature importances (averaged across all trained models)
+        importances = self._fi
 
         # Build per-feature drivers with human-readable influence
         drivers = []
@@ -683,24 +808,36 @@ class FloodPredictor:
     # ── Model persistence ──
 
     def _save_persisted_model(self):
-        """Save trained model and scaler to disk using joblib."""
+        """Save trained model(s) and scaler to disk using joblib."""
         try:
             import joblib
             PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
             joblib.dump(self.model, MODEL_PATH)
             joblib.dump(self.scaler, SCALER_PATH)
-            logger.info("Persisted model to %s", MODEL_PATH)
+            logger.info("Persisted primary model to %s", MODEL_PATH)
+            if self._lgbm_model is not None:
+                joblib.dump(self._lgbm_model, LGBM_MODEL_PATH)
+                logger.info("Persisted LightGBM model to %s", LGBM_MODEL_PATH)
         except Exception as e:
             logger.error("Failed to persist model: %s", e)
 
     def _load_persisted_model(self) -> bool:
-        """Load a previously trained model from disk. Returns True if successful."""
+        """Load a previously trained model(s) from disk. Returns True if successful."""
         try:
             if MODEL_PATH.exists() and SCALER_PATH.exists():
                 import joblib
                 self.model = joblib.load(MODEL_PATH)
                 self.scaler = joblib.load(SCALER_PATH)
                 self.is_trained = True
+                # Load LightGBM secondary model if available
+                if LGBM_MODEL_PATH.exists():
+                    try:
+                        self._lgbm_model = joblib.load(LGBM_MODEL_PATH)
+                        logger.info("Loaded LightGBM secondary model from disk")
+                    except Exception as e:
+                        logger.warning("Could not load LightGBM model (non-critical): %s", e)
+                # Recompute cached feature importances from loaded models
+                self._fi = self._compute_feature_importances()
                 return True
         except Exception as e:
             logger.error("Failed to load persisted model: %s", e)

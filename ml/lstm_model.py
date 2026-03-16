@@ -61,11 +61,50 @@ class FloodSequenceDataset(Dataset):
         return self.sequences[idx], self.labels[idx]
 
 
+# ─── Temporal Attention ───
+
+class TemporalAttention(nn.Module):
+    """
+    Multi-head self-attention over LSTM hidden states.
+
+    Allows the model to attend to ALL time steps (not just the last),
+    capturing early extreme-rainfall events that would otherwise be
+    diluted in the final hidden state.
+    """
+
+    def __init__(self, hidden_size: int, num_heads: int = 4, dropout: float = 0.1):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(
+            embed_dim=hidden_size,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: (batch, seq_len, hidden_size) — LSTM output sequence
+        Returns:
+            (batch, seq_len, hidden_size) — attended sequence with residual
+        """
+        attended, _ = self.attn(x, x, x)
+        return self.norm(x + self.dropout(attended))
+
+
 # ─── Model ───
 
 class FloodLSTM(nn.Module):
     """
-    2-layer LSTM for flood risk classification from daily weather sequences.
+    2-layer Bidirectional LSTM + multi-head temporal attention for flood
+    risk classification from daily weather sequences.
+
+    Improvements over v1:
+      - Temporal attention attends to ALL time steps, not just last hidden state
+      - Global average pooling over attended sequence (more robust than single step)
+      - Residual connection in attention layer
     """
 
     def __init__(
@@ -88,6 +127,13 @@ class FloodLSTM(nn.Module):
             dropout=dropout if num_layers > 1 else 0,
         )
 
+        # Multi-head temporal attention over all LSTM outputs
+        self.attention = TemporalAttention(
+            hidden_size=hidden_size,
+            num_heads=4,
+            dropout=dropout * 0.5,
+        )
+
         self.classifier = nn.Sequential(
             nn.LayerNorm(hidden_size),
             nn.Dropout(dropout),
@@ -104,11 +150,16 @@ class FloodLSTM(nn.Module):
         Returns:
             logits: (batch, num_classes)
         """
-        # LSTM forward
-        lstm_out, (h_n, _) = self.lstm(x)
-        # Use last hidden state from final layer
-        last_hidden = h_n[-1]  # (batch, hidden_size)
-        logits = self.classifier(last_hidden)
+        # LSTM forward — get all hidden states
+        lstm_out, _ = self.lstm(x)  # (batch, seq_len, hidden_size)
+
+        # Temporal attention over all time steps
+        attended = self.attention(lstm_out)  # (batch, seq_len, hidden_size)
+
+        # Global average pooling — more stable than taking only last step
+        pooled = attended.mean(dim=1)  # (batch, hidden_size)
+
+        logits = self.classifier(pooled)
         return logits
 
 

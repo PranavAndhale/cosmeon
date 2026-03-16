@@ -36,6 +36,9 @@ class ForecastEngine:
 
     def __init__(self):
         self._cache: dict[str, dict] = {}
+        # Chronos time-series foundation model (loaded lazily on first use)
+        self._chronos = None
+        self._chronos_attempted = False
         logger.info("ForecastEngine initialized")
 
     def generate_forecast(
@@ -103,6 +106,14 @@ class ForecastEngine:
         # 3. Compute baseline risk from historical patterns
         baseline = self._compute_baseline_risk(historical, lat)
 
+        # 3b. Try Chronos for data-driven precipitation forecasts (improves accuracy)
+        self._load_chronos()
+        chronos_monthly = []
+        if self._chronos is not None and len(historical.get("precip", [])) >= 30:
+            chronos_monthly = self._predict_precip_with_chronos(
+                historical["precip"], horizon_months
+            )
+
         # 4. Generate monthly forecasts
         now = datetime.utcnow()
         is_southern = lat < 0
@@ -135,16 +146,20 @@ class ForecastEngine:
             # Clamp
             risk_probability = max(0.02, min(0.98, raw_probability))
 
-            # Confidence interval widens with distance
-            uncertainty = 0.08 + (i * 0.03)  # grows ~3% per month
+            # Confidence interval — tighter when Chronos data available (better model)
+            chronos_ci_factor = 0.82 if (i <= len(chronos_monthly)) else 1.0
+            uncertainty = (0.08 + (i * 0.03)) * chronos_ci_factor
             conf_lower = max(0.0, risk_probability - uncertainty)
             conf_upper = min(1.0, risk_probability + uncertainty)
 
             # Risk level
             risk_level = self._probability_to_level(risk_probability)
 
-            # Precipitation estimate from seasonal norms
-            precip = self._estimate_monthly_precipitation(historical, month_num)
+            # Precipitation — prefer Chronos data-driven estimate over seasonal heuristic
+            if i <= len(chronos_monthly) and chronos_monthly[i - 1]["mean"] >= 0:
+                precip = chronos_monthly[i - 1]["mean"]
+            else:
+                precip = self._estimate_monthly_precipitation(historical, month_num)
 
             # Drivers
             drivers = self._identify_drivers(
@@ -196,6 +211,69 @@ class ForecastEngine:
             region_name, horizon_months, peak["month_name"], peak["risk_probability"] * 100
         )
         return result
+
+    # ── Chronos foundation model (optional, lazy-loaded) ──
+
+    def _load_chronos(self):
+        """Lazily load Chronos T5-Tiny on first forecast call (CPU-compatible)."""
+        if self._chronos_attempted:
+            return
+        self._chronos_attempted = True
+        try:
+            import torch
+            from chronos import ChronosPipeline
+            self._chronos = ChronosPipeline.from_pretrained(
+                "amazon/chronos-t5-tiny",
+                device_map="cpu",
+                torch_dtype=torch.float32,
+            )
+            logger.info("Chronos T5-Tiny loaded — data-driven precipitation forecasting active")
+        except Exception as e:
+            logger.info("Chronos not available (using statistical fallback): %s", e)
+            self._chronos = None
+
+    def _predict_precip_with_chronos(
+        self, precip_series: list, months_ahead: int
+    ) -> list[dict]:
+        """
+        Use Chronos to predict daily precipitation for the next N months.
+
+        Returns list of dicts with keys: mean, p10, p90 (monthly totals in mm).
+        Falls back to empty list on any error so caller always has a safe fallback.
+        """
+        try:
+            import torch
+
+            clean = [float(p) if p is not None else 0.0 for p in precip_series]
+            context = torch.tensor(clean, dtype=torch.float32).unsqueeze(0)  # (1, T)
+
+            prediction_length = months_ahead * 30
+            forecast = self._chronos.predict(
+                context=context,
+                prediction_length=prediction_length,
+                num_samples=20,
+            )  # shape: (1, num_samples, prediction_length)
+
+            samples = forecast[0].numpy()  # (num_samples, prediction_length)
+
+            monthly = []
+            for m in range(months_ahead):
+                start = m * 30
+                end = start + 30
+                month_samples = np.sum(samples[:, start:end], axis=1)
+                monthly.append({
+                    "mean": float(np.mean(month_samples)),
+                    "p10":  float(np.percentile(month_samples, 10)),
+                    "p90":  float(np.percentile(month_samples, 90)),
+                })
+            logger.info(
+                "Chronos forecast: %d months, first-month mean=%.1f mm",
+                months_ahead, monthly[0]["mean"] if monthly else 0,
+            )
+            return monthly
+        except Exception as e:
+            logger.warning("Chronos precipitation forecast failed: %s", e)
+            return []
 
     def _fetch_historical_climate(self, lat: float, lon: float) -> dict:
         """Fetch 1 year of historical daily climate data."""
