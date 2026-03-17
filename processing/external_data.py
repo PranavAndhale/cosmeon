@@ -188,6 +188,75 @@ class ExternalDataIntegrator:
         lon = (bbox[0] + bbox[2]) / 2
         return self.get_risk_factors_by_coords(lat, lon)
 
+    def fetch_temperature_anomaly(self, lat: float, lon: float) -> dict:
+        """
+        Fetch current 7-day average temperature and estimate anomaly vs seasonal baseline.
+
+        Uses the Open-Meteo forecast API for current temps, and a latitude-based
+        seasonal baseline so we don't need a second archive call.
+
+        Returns:
+            {"current_avg_c": float, "baseline_c": float, "anomaly_c": float}
+        """
+        try:
+            from datetime import datetime
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "temperature_2m_max,temperature_2m_min",
+                "past_days": 7,
+                "forecast_days": 0,
+            }
+            response = requests.get(self.weather_api, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            daily = data.get("daily", {})
+            maxes = daily.get("temperature_2m_max", [])
+            mins = daily.get("temperature_2m_min", [])
+            # Mean of daily averages
+            avgs = [
+                (mx + mn) / 2
+                for mx, mn in zip(maxes, mins)
+                if mx is not None and mn is not None
+            ]
+            current_avg = sum(avgs) / max(len(avgs), 1)
+
+            # Latitude-based seasonal baseline (Northern Hemisphere biased, flipped for SH)
+            month = datetime.utcnow().month
+            abs_lat = abs(lat)
+            is_southern = lat < 0
+            # Estimate climatological mean temperature from latitude
+            if abs_lat < 15:
+                clim_base = 28.0   # Tropical
+            elif abs_lat < 30:
+                clim_base = 25.0   # Subtropical
+            elif abs_lat < 50:
+                # Temperate: peaks in summer (NH: Jul/Aug, SH: Jan/Feb)
+                summer_months = [6, 7, 8] if not is_southern else [12, 1, 2]
+                winter_months = [12, 1, 2] if not is_southern else [6, 7, 8]
+                if month in summer_months:
+                    clim_base = 22.0
+                elif month in winter_months:
+                    clim_base = 5.0
+                else:
+                    clim_base = 14.0
+            else:
+                clim_base = 5.0    # High latitude
+
+            anomaly = round(current_avg - clim_base, 1)
+            logger.info(
+                "Temp anomaly lat=%.2f: current=%.1f°C baseline=%.1f°C anomaly=%+.1f°C",
+                lat, current_avg, clim_base, anomaly,
+            )
+            return {
+                "current_avg_c": round(current_avg, 1),
+                "baseline_c": round(clim_base, 1),
+                "anomaly_c": anomaly,
+            }
+        except Exception as e:
+            logger.warning("fetch_temperature_anomaly failed: %s", e)
+            return {"current_avg_c": 25.0, "baseline_c": 25.0, "anomaly_c": 0.0}
+
     def get_risk_factors_by_coords(self, lat: float, lon: float) -> ExternalRiskFactors:
         """
         Get all external risk factors for arbitrary coordinates.

@@ -63,6 +63,90 @@ INDIRECT_MULTIPLIER = {
     "CRITICAL": 1.2,
 }
 
+# Metro-area GDP estimates (USD) — used for gdp_impact_pct.
+# Sources: World Bank, IMF city-level estimates, Wikipedia metro GDPs.
+_CITY_GDP_USD = {
+    # South Asia
+    "navi mumbai":  110_000_000_000,
+    "mumbai":       370_000_000_000,
+    "kolkata":      150_000_000_000,
+    "dhaka":         80_000_000_000,
+    "assam":         25_000_000_000,
+    "bihar":         20_000_000_000,
+    "sylhet":        12_000_000_000,
+    # SE Asia
+    "jakarta":      180_000_000_000,
+    "bangkok":      190_000_000_000,
+    "ho chi minh":   85_000_000_000,
+    "manila":       120_000_000_000,
+    # Europe
+    "rotterdam":     80_000_000_000,
+    "bremen":        35_000_000_000,
+    "budapest":      55_000_000_000,
+    "venice":        30_000_000_000,
+    # Americas
+    "são paulo":    430_000_000_000,
+    "sao paulo":    430_000_000_000,
+    "manaus":        25_000_000_000,
+    "new orleans":   60_000_000_000,
+    "houston":      530_000_000_000,
+    # East Asia
+    "wuhan":        230_000_000_000,
+    "chongqing":    350_000_000_000,
+    # Africa
+    "khartoum":      22_000_000_000,
+    "lagos":         90_000_000_000,
+}
+
+# Urban population density estimates (people / km²)
+_CITY_POP_DENSITY = {
+    "navi mumbai":   9_000,
+    "mumbai":       20_000,
+    "kolkata":      24_000,
+    "dhaka":        44_000,
+    "assam":           400,
+    "bihar":           900,
+    "sylhet":        2_500,
+    "jakarta":      15_000,
+    "bangkok":       5_600,
+    "ho chi minh":   4_200,
+    "manila":       46_000,
+    "rotterdam":     3_000,
+    "bremen":        1_500,
+    "budapest":      3_300,
+    "venice":          700,
+    "são paulo":     7_800,
+    "sao paulo":     7_800,
+    "manaus":          180,
+    "new orleans":     600,
+    "houston":       1_400,
+    "wuhan":         1_500,
+    "chongqing":       400,
+    "khartoum":      1_800,
+    "lagos":         6_800,
+}
+
+_DEFAULT_GDP_USD        = 50_000_000_000   # $50B fallback
+_DEFAULT_POP_DENSITY    = 500              # people/km² fallback
+
+
+def _city_gdp(region_name: str) -> float:
+    """Return estimated metro GDP in USD for the region."""
+    name = region_name.lower()
+    for key, gdp in _CITY_GDP_USD.items():
+        if key in name:
+            return gdp
+    return _DEFAULT_GDP_USD
+
+
+def _city_pop_density(region_name: str) -> float:
+    """Return estimated urban population density (people/km²) for the region."""
+    name = region_name.lower()
+    for key, density in _CITY_POP_DENSITY.items():
+        if key in name:
+            return density
+    return _DEFAULT_POP_DENSITY
+
 
 class FinancialImpactEngine:
     """Quantifies financial impact of flood events."""
@@ -106,12 +190,9 @@ class FinancialImpactEngine:
             asset_damage = asset_scores["total_exposure_usd"]
             result.direct_damage_usd = max(result.direct_damage_usd, asset_damage)
 
-        # Population impact
-        if population_density > 0:
-            result.affected_population = int(flood_area_km2 * population_density)
-        else:
-            # Estimate from area (global avg ~50 people/km²)
-            result.affected_population = int(flood_area_km2 * 50 * flood_probability)
+        # Population impact — use region-aware density if caller didn't supply one
+        effective_density = population_density if population_density > 0 else _city_pop_density(region_name)
+        result.affected_population = int(flood_area_km2 * effective_density * flood_probability)
 
         # Displacement costs ($50/person/day × 14 days average)
         result.displacement_cost_usd = result.affected_population * 50 * 14
@@ -129,8 +210,8 @@ class FinancialImpactEngine:
             result.displacement_cost_usd
         )
 
-        # GDP impact (rough estimate — $500M regional GDP baseline)
-        regional_gdp = 500_000_000  # Can be made configurable
+        # GDP impact — use region-aware metro GDP (not a global flat $500M)
+        regional_gdp = _city_gdp(region_name)
         result.gdp_impact_pct = (result.total_impact_usd / regional_gdp) * 100 if regional_gdp > 0 else 0
 
         # Mitigation ROI
