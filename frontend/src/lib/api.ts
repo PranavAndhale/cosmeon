@@ -363,8 +363,10 @@ export interface MonthlyTrend {
 }
 
 export interface TrendData {
-    region_id: number;
-    region_name: string;
+    region_id?: number;
+    region_name?: string;
+    lat?: number;
+    lon?: number;
     months: number;
     data_points: number;
     trend: MonthlyTrend[];
@@ -373,6 +375,11 @@ export interface TrendData {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchTrends(regionId: number, months = 12): Promise<TrendData | null> {
     return safeFetch(`${API}/trends/${regionId}?months=${months}`);
+}
+
+/** Fetch real Open-Meteo ERA5 monthly trend data for any lat/lon (ad-hoc locations). */
+export async function fetchTrendsLocation(lat: number, lon: number, months = 12): Promise<TrendData | null> {
+    return safeFetch(`${API}/trends/location?lat=${lat}&lon=${lon}&months=${months}`);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
