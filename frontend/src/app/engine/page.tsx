@@ -228,6 +228,7 @@ export default function GeospatialEngine() {
   const [geoResults, setGeoResults] = useState<GeoResult[]>([]);
   const [geoLoading, setGeoLoading] = useState(false);
   const geoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geoRequestId = useRef(0); // increments on every search to discard stale responses
   const [activeSource, setActiveSource] = useState("Sentinel-2");
   const [activeOrb, setActiveOrb] = useState<OrbKey>("flood");
   const [hoverInfo, setHoverInfo] = useState<Region | null>(null);
@@ -324,31 +325,48 @@ export default function GeospatialEngine() {
   // ── Debounced geocoding search for place names ──
   useEffect(() => {
     const q = searchQuery.trim();
+
+    // Clear immediately when query is empty or is a coordinate
     if (!q || q.length < 2 || parsedCoords) {
       setGeoResults([]);
+      setGeoLoading(false); // always reset spinner
+      if (geoTimerRef.current) { clearTimeout(geoTimerRef.current); geoTimerRef.current = null; }
       return;
     }
-    // Skip geocoding only if short query exactly matches a monitored region
-    if (q.length < 3) {
-      const matchesRegion = regions.some(r => r.name.toLowerCase().includes(q.toLowerCase()));
-      if (matchesRegion) {
-        setGeoResults([]);
-        return;
-      }
+
+    // If the query already exactly matches a monitored region, skip geocoding
+    const exactRegionMatch = regions.some(r => r.name.toLowerCase() === q.toLowerCase());
+    if (exactRegionMatch) {
+      setGeoResults([]);
+      setGeoLoading(false);
+      return;
     }
-    // Debounce: wait 350ms after last keystroke
+
+    // Clear any pending timer
     if (geoTimerRef.current) clearTimeout(geoTimerRef.current);
-    setGeoLoading(true); // show loading state immediately
+
+    // 500ms debounce — avoids hammering Nominatim (rate limit: 1 req/s)
     geoTimerRef.current = setTimeout(async () => {
+      const reqId = ++geoRequestId.current; // increment before async call
+      setGeoLoading(true);
+      setGeoResults([]); // clear stale results while fetching
+
       try {
         const results = await geocodeSearch(q);
-        setGeoResults(results);
+        // Only apply if this is still the latest request
+        if (reqId === geoRequestId.current) {
+          setGeoResults(results ?? []);
+        }
       } catch {
-        setGeoResults([]);
+        if (reqId === geoRequestId.current) setGeoResults([]);
+      } finally {
+        if (reqId === geoRequestId.current) setGeoLoading(false);
       }
-      setGeoLoading(false);
-    }, 350);
-    return () => { if (geoTimerRef.current) clearTimeout(geoTimerRef.current); };
+    }, 500);
+
+    return () => {
+      if (geoTimerRef.current) { clearTimeout(geoTimerRef.current); geoTimerRef.current = null; }
+    };
   }, [searchQuery, parsedCoords, regions]);
 
   // ── Select a region & fly to it ──
@@ -650,19 +668,50 @@ export default function GeospatialEngine() {
 
         <div className="pointer-events-auto absolute left-1/2 -translate-x-1/2" style={{ position: 'absolute' }}>
           <div className="relative">
-            <div className={`h-12 flex items-center gap-3 px-2 py-1 ${glassClass} rounded-full`}>
-              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center ml-1"><Search size={14} className="text-gray-400" /></div>
+            <div className={`h-12 flex items-center gap-3 px-2 py-1 ${glassClass} rounded-full`}
+              style={{ borderColor: searchFocused ? 'rgba(0,229,255,0.3)' : undefined }}>
+              <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center ml-1">
+                {geoLoading
+                  ? <div className="w-3 h-3 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                  : <Search size={14} className="text-gray-400" />
+                }
+              </div>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => setSearchFocused(true)}
-                onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
+                // Use onMouseDown on dropdown items so blur fires AFTER selection
+                onBlur={() => setTimeout(() => setSearchFocused(false), 250)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setSearchQuery(""); setGeoResults([]); setSearchFocused(false);
+                    (e.target as HTMLInputElement).blur();
+                  } else if (e.key === 'Enter') {
+                    // Enter with coords — analyze immediately
+                    if (parsedCoords) {
+                      analyzeAdHocLocation(parsedCoords.lat, parsedCoords.lon);
+                      setSearchQuery(""); setGeoResults([]);
+                    // Enter with a single geo result — select it
+                    } else if (geoResults.length === 1) {
+                      const geo = geoResults[0];
+                      const parts = geo.display_name.split(', ');
+                      analyzeAdHocLocation(geo.lat, geo.lon, parts.slice(0, 3).join(', '));
+                      setSearchQuery(""); setGeoResults([]);
+                    // Enter with a single region match — select it
+                    } else if (filteredRegions.length === 1) {
+                      selectRegion(filteredRegions[0]); setSearchQuery("");
+                    }
+                  }
+                }}
                 placeholder="Search any place on Earth... e.g., Tokyo, Mumbai, 26.0 85.5"
                 className={`bg-transparent outline-none border-none text-sm w-96 text-white placeholder:text-gray-500 ${textMono}`}
               />
               {searchQuery && (
-                <button onClick={() => setSearchQuery("")} className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center mr-1 hover:bg-white/20 transition-colors">
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setSearchQuery(""); setGeoResults([]); setGeoLoading(false); }}
+                  className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center mr-1 hover:bg-white/20 transition-colors"
+                >
                   <X size={10} className="text-gray-400" />
                 </button>
               )}
@@ -671,23 +720,25 @@ export default function GeospatialEngine() {
             <AnimatePresence>
               {searchQuery && searchFocused && (filteredRegions.length > 0 || parsedCoords || geoResults.length > 0 || geoLoading || searchQuery.trim().length >= 2) && (
                 <motion.div
-                  initial={{ opacity: 0, y: -5 }}
+                  initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  className={`absolute top-14 left-0 right-0 ${glassClass} !rounded-xl py-2 max-h-[340px] overflow-y-auto z-50`}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  className={`absolute top-14 left-0 right-0 ${glassClass} !rounded-xl py-2 max-h-[360px] overflow-y-auto z-50`}
+                  style={{ minWidth: '420px' }}
                 >
                   {/* Coordinate analysis option */}
                   {parsedCoords && (
                     <div
-                      onMouseDown={() => { analyzeAdHocLocation(parsedCoords.lat, parsedCoords.lon); setSearchQuery(""); }}
+                      onMouseDown={(e) => { e.preventDefault(); analyzeAdHocLocation(parsedCoords.lat, parsedCoords.lon); setSearchQuery(""); setGeoResults([]); }}
                       className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-cyan-500/10 transition-colors border-b border-white/5"
                     >
-                      <div className="w-7 h-7 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0">
                         <MapPin size={14} className="text-cyan-400" />
                       </div>
                       <div className="flex flex-col">
-                        <span className={`text-sm ${textMono} text-cyan-400`}>Analyze {parsedCoords.lat.toFixed(2)}, {parsedCoords.lon.toFixed(2)}</span>
-                        <span className={`text-[11px] ${textMono} text-gray-500`}>Direct coordinate analysis</span>
+                        <span className={`text-sm ${textMono} text-cyan-400`}>Analyze {parsedCoords.lat.toFixed(4)}, {parsedCoords.lon.toFixed(4)}</span>
+                        <span className={`text-[11px] ${textMono} text-gray-500`}>Direct coordinate entry — press Enter or click</span>
                       </div>
                     </div>
                   )}
@@ -699,7 +750,7 @@ export default function GeospatialEngine() {
                       {filteredRegions.map(reg => (
                         <div
                           key={reg.id}
-                          onMouseDown={() => { selectRegion(reg); setSearchQuery(""); }}
+                          onMouseDown={(e) => { e.preventDefault(); selectRegion(reg); setSearchQuery(""); setGeoResults([]); }}
                           className="px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-white/10 transition-colors"
                         >
                           <MapPin size={14} style={{ color: primaryColor }} />
@@ -712,20 +763,22 @@ export default function GeospatialEngine() {
                   {/* Geocoded place results */}
                   {geoLoading && (
                     <div className="px-4 py-3 flex items-center gap-3">
-                      <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
-                      <span className={`text-[13px] ${textMono} text-gray-500`}>Searching places...</span>
+                      <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin shrink-0" />
+                      <span className={`text-[13px] ${textMono} text-gray-400`}>Searching worldwide places…</span>
                     </div>
                   )}
-                  {geoResults.length > 0 && (
+                  {!geoLoading && geoResults.length > 0 && (
                     <>
-                      <div className={`px-4 py-1.5 text-[11px] text-gray-600 uppercase ${textMono} tracking-widest ${filteredRegions.length > 0 ? 'border-t border-white/5 mt-1' : ''}`}>Places Worldwide</div>
+                      <div className={`px-4 py-1.5 text-[11px] text-gray-600 uppercase ${textMono} tracking-widest ${filteredRegions.length > 0 ? 'border-t border-white/5 mt-1' : ''}`}>
+                        Places Worldwide
+                      </div>
                       {geoResults.map((geo, i) => {
                         const parts = geo.display_name.split(', ');
                         const shortName = parts.slice(0, 3).join(', ');
                         return (
                           <div
                             key={`geo-${i}`}
-                            onMouseDown={() => { analyzeAdHocLocation(geo.lat, geo.lon, shortName); setSearchQuery(""); setGeoResults([]); }}
+                            onMouseDown={(e) => { e.preventDefault(); analyzeAdHocLocation(geo.lat, geo.lon, shortName); setSearchQuery(""); setGeoResults([]); }}
                             className="px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-cyan-500/10 transition-colors"
                           >
                             <div className="w-6 h-6 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
@@ -733,16 +786,18 @@ export default function GeospatialEngine() {
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className={`text-sm ${textMono} text-gray-200 truncate`}>{shortName}</span>
-                              <span className={`text-[11px] ${textMono} text-gray-600 truncate`}>{geo.lat.toFixed(3)}, {geo.lon.toFixed(3)} — {geo.type}</span>
+                              <span className={`text-[11px] ${textMono} text-gray-500 truncate`}>{geo.lat.toFixed(4)}, {geo.lon.toFixed(4)}</span>
                             </div>
                           </div>
                         );
                       })}
                     </>
                   )}
-                  {/* No results fallback */}
+                  {/* No results state — only shown once loading is complete */}
                   {!geoLoading && geoResults.length === 0 && filteredRegions.length === 0 && !parsedCoords && searchQuery.trim().length >= 2 && (
-                    <div className={`px-4 py-3 text-[13px] ${textMono} text-gray-500`}>No regions match &quot;{searchQuery}&quot;</div>
+                    <div className={`px-4 py-3 text-[13px] ${textMono} text-gray-500`}>
+                      No results for &quot;{searchQuery}&quot; — try a different spelling or use lat, lon
+                    </div>
                   )}
                 </motion.div>
               )}
