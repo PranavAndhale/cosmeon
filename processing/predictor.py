@@ -517,8 +517,18 @@ class FloodPredictor:
 
         pred_class = int(np.argmax(final_proba))
         predicted_level = self.risk_labels[pred_class]
-        flood_probability = float(final_proba[pred_class])
 
+        # flood_probability = P(HIGH) + P(CRITICAL) — actual probability a flood event occurs.
+        # risk_labels = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] → indices 2 and 3 are flood-worthy.
+        high_idx = self.risk_labels.index("HIGH") if "HIGH" in self.risk_labels else 2
+        crit_idx = self.risk_labels.index("CRITICAL") if "CRITICAL" in self.risk_labels else 3
+        flood_probability = float(
+            final_proba[high_idx] + final_proba[crit_idx]
+            if len(final_proba) > max(high_idx, crit_idx)
+            else final_proba[pred_class]
+        )
+
+        # confidence = margin between the top two class probabilities (how decisive the prediction is)
         sorted_proba = sorted(final_proba, reverse=True)
         confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
 

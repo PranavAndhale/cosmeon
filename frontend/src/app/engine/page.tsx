@@ -893,11 +893,11 @@ export default function GeospatialEngine() {
                       <span style={{ color: riskColor(prediction.predicted_risk_level) }} className="font-bold">{prediction.predicted_risk_level}</span>
                     </div>
                     <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300">Flood Probability</span>
+                      <span className="text-gray-300" title="Probability that risk is HIGH or CRITICAL (actual flood event)">Flood Risk Prob.</span>
                       <span style={{ color: primaryColor }}>{(prediction.flood_probability * 100).toFixed(0)}%</span>
                     </div>
                     <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300">Model Confidence</span>
+                      <span className="text-gray-300" title="How decisive the prediction is — gap between top two class scores">Model Confidence</span>
                       <span className="text-gray-400">{(prediction.confidence * 100).toFixed(0)}%</span>
                     </div>
                   </div>
@@ -1791,11 +1791,11 @@ export default function GeospatialEngine() {
                             <span style={{ color: riskColor(pred.predicted_risk_level) }} className="font-bold">{pred.predicted_risk_level}</span>
                           </div>
                           <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300">Flood Probability</span>
+                            <span className="text-gray-300" title="Probability that risk is HIGH or CRITICAL (actual flood event)">Flood Risk Prob.</span>
                             <span style={{ color: primaryColor }}>{(pred.flood_probability * 100).toFixed(0)}%</span>
                           </div>
                           <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300">Model Confidence</span>
+                            <span className="text-gray-300" title="How decisive the prediction is — gap between top two class scores">Model Confidence</span>
                             <span className="text-gray-400">{(pred.confidence * 100).toFixed(0)}%</span>
                           </div>
                           {pred.model_version && (
