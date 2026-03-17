@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
 import { BarChart, Bar, LineChart, Line } from "recharts";
 
 // ─── Types ───
@@ -218,6 +218,8 @@ export default function GeospatialEngine() {
   const [adHocData, setAdHocData] = useState<any>(null);
   const [adHocExplanation, setAdHocExplanation] = useState<ExplainData | null>(null);
   const [adHocLoading, setAdHocLoading] = useState(false);
+  /** Real Open-Meteo ERA5 monthly trend data for the current ad-hoc location */
+  const [adHocTrendData, setAdHocTrendData] = useState<TrendData | null>(null);
   const [mapClickPopup, setMapClickPopup] = useState<{ lat: number; lon: number; name?: string } | null>(null);
 
   // ── UI State ──
@@ -355,6 +357,7 @@ export default function GeospatialEngine() {
     setAdHocLocation(null); // clear ad-hoc when selecting a real region
     setAdHocData(null);
     setAdHocExplanation(null);
+    setAdHocTrendData(null);
     setForecastData(null);
     setNlgSummary(null);
     setShowForecast(false);
@@ -379,6 +382,7 @@ export default function GeospatialEngine() {
     setSelectedRegion(null); // deselect any region
     setAdHocLoading(true);
     setAdHocExplanation(null);
+    setAdHocTrendData(null); // reset trend — useEffect will re-fetch for new location
     setMapClickPopup(null);
     setFusionData(null);
     setCompoundData(null);
@@ -400,6 +404,18 @@ export default function GeospatialEngine() {
     if (data) setAdHocData(data);
     setAdHocLoading(false);
   }, []);
+
+  // ── Fetch real ERA5 monthly trends whenever an ad-hoc location is set ──
+  useEffect(() => {
+    if (!adHocLocation) {
+      setAdHocTrendData(null);
+      return;
+    }
+    // Fire-and-forget: populate chart while other analysis runs in parallel
+    fetchTrendsLocation(adHocLocation.lat, adHocLocation.lon, 12).then(d => {
+      if (d && d.trend && d.trend.length > 0) setAdHocTrendData(d);
+    });
+  }, [adHocLocation]);
 
   // ── Load Initial Data ──
   useEffect(() => {
@@ -484,7 +500,7 @@ export default function GeospatialEngine() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
-  // ── Derived data for charts ──
+  // ── Derived data for charts (registered regions from DB history) ──
   const chartData = useMemo(() =>
     riskHistory
       .slice()
@@ -500,6 +516,26 @@ export default function GeospatialEngine() {
         };
       })
     , [riskHistory]);
+
+  /**
+   * displayChartData — the actual data fed to the bottom time-series chart.
+   *
+   * • Ad-hoc location: use real Open-Meteo ERA5 monthly trend data fetched by
+   *   fetchTrendsLocation().  This fills the chart for ANY searched location.
+   * • Registered region: use DB risk-history as before.
+   */
+  const displayChartData = useMemo(() => {
+    if (adHocLocation && adHocTrendData?.trend?.length) {
+      return adHocTrendData.trend.map(t => ({
+        date: t.month_label,
+        flood: t.avg_flood_pct,
+        confidence: t.avg_confidence,
+        water_change: t.avg_water_change_pct,
+        vegetation_stress: t.avg_vegetation_stress,
+      }));
+    }
+    return chartData;
+  }, [adHocLocation, adHocTrendData, chartData]);
 
   // ── Choose chart data key based on active orb ──
   const chartKey = activeOrb === "flood" ? "flood" : activeOrb === "infra" ? "water_change" : "vegetation_stress";
@@ -1719,7 +1755,7 @@ export default function GeospatialEngine() {
                     )}
                     <span className="text-white text-[15px] font-semibold mt-1">{adHocLocation.name} — {currentOrb.panelTitle}</span>
                   </div>
-                  <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); setForecastData(null); setNlgSummary(null); setShowForecast(false); setShowAiInsights(false); setFusionData(null); setCompoundData(null); setFinancialData(null); setShowFusion(false); setShowCompound(false); setShowFinancial(false); setShowFeedback(false); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
+                  <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); setAdHocTrendData(null); setForecastData(null); setNlgSummary(null); setShowForecast(false); setShowAiInsights(false); setFusionData(null); setCompoundData(null); setFinancialData(null); setShowFusion(false); setShowCompound(false); setShowFinancial(false); setShowFeedback(false); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
               </div>
 
@@ -2422,7 +2458,11 @@ export default function GeospatialEngine() {
               {selectedRegion ? `${selectedRegion.name} — ${currentOrb.panelTitle}` : adHocLocation ? `${adHocLocation.name} — ${currentOrb.panelTitle}` : 'Time-Series & Change Detection'}
             </h3>
             <span className={`text-[10px] text-gray-600 ${textMono}`}>
-              {activeOrb === 'flood' ? 'Satellite-derived flood coverage trend from historical risk assessments' : activeOrb === 'infra' ? 'Infrastructure exposure trend based on water change analysis' : 'Vegetation anomaly index over time from NDVI analysis'}
+              {adHocLocation
+                ? 'Open-Meteo ERA5 reanalysis — real historical climate data for this location'
+                : activeOrb === 'flood' ? 'Satellite-derived flood coverage trend from historical risk assessments'
+                : activeOrb === 'infra' ? 'Infrastructure exposure trend based on water change analysis'
+                : 'Vegetation anomaly index over time from NDVI analysis'}
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -2441,7 +2481,7 @@ export default function GeospatialEngine() {
         <div className="flex-grow flex flex-col relative p-4 min-h-0">
           <div className="flex-grow w-full min-h-0">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData.length > 0 ? chartData : [{ date: '--', flood: 0, confidence: 0, water_change: 0 }]}>
+              <AreaChart data={displayChartData.length > 0 ? displayChartData : [{ date: '--', flood: 0, confidence: 0, water_change: 0 }]}>
                 <defs>
                   <linearGradient id="chartColor" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={primaryColor} stopOpacity={0.4} />

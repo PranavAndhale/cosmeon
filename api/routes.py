@@ -1166,27 +1166,45 @@ def get_compound_risk(region_id: int):
 
 @app.post("/api/compound-risk/location")
 def compound_risk_location(body: LocationRequest):
-    """Compute compound multi-hazard risk for arbitrary coordinates."""
+    """
+    Compute compound multi-hazard risk for arbitrary coordinates.
+
+    Uses direct physical measurements from Open-Meteo ERA5 reanalysis:
+      - Soil saturation: soil_moisture_0_to_7cm (volumetric, measured)
+      - Vegetation stress: FAO-56 Penman-Monteith ET0 water-balance (precip − ET0)
+      - Thermal anomaly: temperature vs latitude-adjusted seasonal baseline
+      - Flood probability: GloFAS discharge + Open-Meteo rainfall ensemble
+    """
     try:
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
-        # Use live detection for accurate flood probability
+
+        # Live flood detection for flood_probability / confidence
         detection = analysis_engine.analyze_by_coords(lat, lon, name)
         flood_prob = detection.flood_probability
         confidence = detection.confidence_score
+
         from processing.external_data import ExternalDataIntegrator
         ext = ExternalDataIntegrator()
-        rainfall = ext.fetch_rainfall(lat, lon, days=7)
+
+        # Rainfall and elevation (still used as descriptive inputs to compound engine)
+        rainfall  = ext.fetch_rainfall(lat, lon, days=7)
         elevation = ext.fetch_elevation(lat, lon)
-        rainfall_7d = detection.rainfall_7d_mm
-        # Soil saturation: fraction of soil capacity filled (rainfall / field capacity proxy)
-        soil_saturation = min(1.0, (rainfall_7d / 150.0) + (flood_prob * 0.25))
-        # Vegetation stress: drought proxy — low precipitation relative to normal → high stress
-        # High flood_prob with heavy rain → low vegetation stress (not a drought)
-        vegetation_stress = max(0.0, min(1.0, 0.6 - (rainfall_7d / 300.0) - (flood_prob * 0.3)))
-        # Thermal anomaly: actual temperature delta vs seasonal baseline (in °C, not a bool)
-        temp_info = ext.fetch_temperature_anomaly(lat, lon)
-        thermal_anomaly = temp_info.get("anomaly_c", 0.0)
+
+        # ── Direct physical measurements (replace computed proxies) ──
+
+        # Soil saturation — Open-Meteo ERA5 hourly soil_moisture_0_to_7cm
+        sm_data          = ext.fetch_soil_moisture(lat, lon)
+        soil_saturation  = sm_data["saturation_fraction"]   # 0-1, measured
+
+        # Vegetation stress — FAO-56 ET0 water balance (precip − ET0)
+        veg_data          = ext.fetch_vegetation_stress(lat, lon)
+        vegetation_stress = veg_data["stress_index"]         # 0-1, physically derived
+
+        # Thermal anomaly — actual °C above/below seasonal baseline
+        temp_info      = ext.fetch_temperature_anomaly(lat, lon)
+        thermal_anomaly = temp_info.get("anomaly_c", 0.0)   # °C, not a bool
+
         result = _get_compound().compute_compound_risk(
             flood_probability=flood_prob,
             flood_confidence=confidence,
@@ -1197,7 +1215,15 @@ def compound_risk_location(body: LocationRequest):
             elevation_m=elevation.get("mean_elevation_m", 100),
             region_name=name,
         )
-        return result.to_dict()
+        # Attach data provenance so the UI can show sources
+        d = result.to_dict()
+        d["data_sources"] = {
+            "soil_saturation": sm_data.get("source", "open-meteo-era5"),
+            "vegetation_stress": veg_data.get("source", "open-meteo-fao56"),
+            "thermal_anomaly": "open-meteo-forecast",
+            "flood_probability": "glofas+open-meteo",
+        }
+        return d
     except Exception as e:
         logger.exception("Compound risk (location) failed")
         return {"error": str(e)}
@@ -1303,24 +1329,55 @@ def get_financial_impact(region_id: int):
 
 @app.post("/api/financial/location")
 def financial_impact_location(body: LocationRequest):
-    """Estimate financial impact for arbitrary coordinates."""
+    """
+    Estimate financial impact for arbitrary coordinates.
+
+    Uses World Bank Open Data API for authoritative country-level GDP and
+    population density, geocoded from the provided coordinates via Nominatim.
+    Falls back to regional lookup table if World Bank is unavailable.
+    """
     try:
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
-        # Use the live analysis detection which has proper flood probability
+
+        # Live detection for flood geometry
         detection = analysis_engine.analyze_by_coords(lat, lon, name)
         flood_prob = detection.flood_probability
         total_area = detection.total_area_km2
         flood_area = detection.flood_area_km2
         risk_level = detection.detected_risk_level
+
+        # ── World Bank authoritative GDP + population density ──
+        from processing.external_data import ExternalDataIntegrator
+        ext = ExternalDataIntegrator()
+        econ_data      = ext.fetch_country_gdp_pop(lat, lon)
+        gdp_usd        = econ_data["gdp_usd"]
+        pop_density    = econ_data["pop_density_km2"]
+        country_code   = econ_data["country_code"]
+        econ_source    = econ_data["source"]
+
         result = _get_financial().estimate_impact(
             risk_level=risk_level,
             flood_area_km2=flood_area,
             total_area_km2=total_area,
             flood_probability=flood_prob,
+            population_density=pop_density,
             region_name=name,
         )
-        return result.to_dict()
+        d = result.to_dict()
+
+        # Override GDP impact with World Bank figure for correct percentage
+        if gdp_usd and gdp_usd > 0:
+            d["gdp_impact_pct"] = round((result.total_impact_usd / gdp_usd) * 100, 3)
+
+        d["data_sources"] = {
+            "gdp":              econ_source,
+            "population":       econ_source,
+            "country_code":     country_code,
+            "country_name":     econ_data.get("country_name", "Unknown"),
+            "gdp_usd_country":  round(gdp_usd / 1e9, 1),   # in $B for display
+        }
+        return d
     except Exception as e:
         logger.exception("Financial impact (location) failed")
         return {"error": str(e)}
@@ -1690,6 +1747,33 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
         })
 
     return result
+
+
+@app.get("/api/trends/location")
+def get_trends_location(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    months: int = Query(12, ge=1, le=24),
+):
+    """
+    Monthly aggregated risk trend data for any arbitrary lat/lon.
+
+    Calls the real Open-Meteo ERA5 archive to derive flood-risk metrics from
+    heavy-rain days and precipitation anomalies — identical methodology to the
+    registered-region endpoint but requires no database entry.
+
+    Used by the frontend time-series chart when a location is searched ad-hoc.
+    """
+    # Build a small bbox (~50 km) around the point for area estimates
+    bbox = [lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5]
+    trend = _build_real_monthly_trends(lat, lon, bbox, months)
+    return {
+        "lat":         lat,
+        "lon":         lon,
+        "months":      months,
+        "data_points": len(trend),
+        "trend":       trend,
+    }
 
 
 @app.get("/api/trends/{region_id}")
