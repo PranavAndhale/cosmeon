@@ -344,24 +344,29 @@ def _precip_forecast_cmip6(lat: float, lon: float, months: int) -> dict:
 def get_soil_moisture(lat: float, lon: float) -> dict:
     """
     Return soil saturation fraction with tiered fallback.
+    A value of exactly 0.0 is treated as no-data (ocean grid cell) and
+    triggers T2, since ERA5 returns 0 for water-covered grid cells.
 
-    T1: ERA5 reanalysis archive (14 days)
+T1: ERA5 reanalysis archive (14 days)
     T2: ECMWF IFS 0.25° operational model (7 days)
     T3: ERA5 reanalysis same-month prior year (climatological baseline)
     """
     # T1: ERA5 reanalysis archive
     try:
         result = _soil_moisture_era5_archive(lat, lon)
-        if result:
+        # saturation_fraction == 0.0 means ERA5 returned ocean/no-land data
+        if result and result.get("saturation_fraction", 0) > 0.001:
             result["_tier"] = 1
             return result
+        if result and result.get("saturation_fraction", 0) == 0.0:
+            logger.info("Soil T1 ERA5 returned 0 (ocean grid) at %.2f,%.2f — trying T2", lat, lon)
     except Exception as e:
         logger.warning("T1 soil moisture (ERA5 archive) failed: %s", e)
 
     # T2: ECMWF IFS 0.25° operational
     try:
         result = _soil_moisture_ecmwf_ifs(lat, lon)
-        if result:
+        if result and result.get("saturation_fraction", 0) > 0.001:
             result["_tier"] = 2
             return result
     except Exception as e:
@@ -370,7 +375,7 @@ def get_soil_moisture(lat: float, lon: float) -> dict:
     # T3: ERA5 prior-year same-month archive
     try:
         result = _soil_moisture_era5_climatology(lat, lon)
-        if result:
+        if result and result.get("saturation_fraction", 0) > 0.001:
             result["_tier"] = 3
             return result
     except Exception as e:
@@ -661,8 +666,46 @@ def _econ_world_bank(lat: float, lon: float) -> dict:
     }
 
 
+def _latlon_to_wb_region(lat: float, lon: float) -> Optional[str]:
+    """
+    Map lat/lon coordinates to World Bank regional aggregate code.
+    Used as a final geographic fallback when timezone mapping fails
+    (e.g. 'GMT' timezone for small islands, Sahara, ocean points).
+    """
+    # North America
+    if lat > 14 and -170 < lon < -50:
+        return "NAC"
+    # Latin America & Caribbean
+    if -60 < lat < 35 and -120 < lon < -30:
+        return "LCN"
+    # Europe & Central Asia (includes Russia)
+    if lat > 35 and -25 < lon < 85:
+        return "ECS"
+    if lat > 50 and 85 < lon < 180:  # Russia east of Urals
+        return "ECS"
+    # Middle East & North Africa
+    if 15 < lat < 40 and -10 < lon < 65:
+        return "MEA"
+    # Sub-Saharan Africa
+    if -35 < lat < 15 and -20 < lon < 55:
+        return "SSF"
+    # South Asia
+    if 5 < lat < 40 and 55 < lon < 100:
+        return "SAS"
+    # East Asia & Pacific (including small Pacific islands)
+    if -55 < lat < 55 and 95 < lon < 180:
+        return "EAS"
+    if lat < 0 and lon < -100:  # Pacific islands south/east
+        return "EAS"
+    # Default: MEA for remaining Sahara/equatorial ambiguous zones
+    if -35 < lat < 40 and -20 < lon < 55:
+        return "MEA"
+    return None
+
+
 def _econ_world_bank_regional(lat: float, lon: float) -> dict:
-    """T2: Use Open-Meteo timezone to determine World Bank region code."""
+    """T2: Use Open-Meteo timezone (with lat/lon bounding box fallback) to determine
+    World Bank region code. Handles 'GMT' timezone returned for islands/Sahara/ocean."""
     # Get timezone from Open-Meteo
     resp = requests.get(
         _FORECAST_API,
@@ -676,14 +719,23 @@ def _econ_world_bank_regional(lat: float, lon: float) -> dict:
     resp.raise_for_status()
     tz = resp.json().get("timezone", "")
 
-    # Map timezone to World Bank region
+    # 1. Direct match
     region_code = _TZ_TO_WB_REGION.get(tz)
-    if not region_code:
-        # Try prefix match (e.g., "Europe/Berlin" -> match "Europe/" prefix)
+
+    # 2. Prefix match (e.g. "Europe/Berlin" → first "Europe/" key)
+    if not region_code and "/" in tz:
+        tz_prefix = tz.split("/")[0]
         for tz_key, rc in _TZ_TO_WB_REGION.items():
-            if tz.split("/")[0] == tz_key.split("/")[0]:
+            if tz_key.split("/")[0] == tz_prefix:
                 region_code = rc
                 break
+
+    # 3. Lat/lon geographic bounding box (handles "GMT", unknown islands, etc.)
+    if not region_code:
+        region_code = _latlon_to_wb_region(lat, lon)
+        if region_code:
+            logger.info("Econ T2: timezone '%s' unmapped — used lat/lon bbox → %s", tz, region_code)
+
     if not region_code:
         raise ValueError(f"Cannot map timezone '{tz}' to World Bank region")
 

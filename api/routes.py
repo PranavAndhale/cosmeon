@@ -1181,9 +1181,10 @@ def _compute_historical_flood_frequency(lat: float, lon: float) -> dict:
     """
     import requests
     from collections import defaultdict
+    from datetime import timedelta
 
-    end = datetime.utcnow() - __import__("datetime").timedelta(days=1)
-    start = end - __import__("datetime").timedelta(days=5 * 365)
+    end = datetime.utcnow() - timedelta(days=1)
+    start = end - timedelta(days=5 * 365)
 
     try:
         resp = requests.get(
