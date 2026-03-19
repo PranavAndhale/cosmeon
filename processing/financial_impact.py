@@ -202,6 +202,16 @@ class FinancialImpactEngine:
             depth_by_risk = {"LOW": 0.0, "MEDIUM": 0.3, "HIGH": 0.8, "CRITICAL": 1.5}
             flood_depth_m = depth_by_risk.get(risk_level, 0.3)
 
+        # ── Zero-depth shortcut ──────────────────────────────────────────────
+        # No flood depth = no actual flooding = no financial impact.
+        # Previously, displacement was still calculated even at depth 0, producing
+        # misleading results (e.g., "$62K total but $0 Direct, $0 Indirect, $0 Recovery").
+        if flood_depth_m <= 0:
+            result.confidence = "high" if gdp_usd > 0 else "low"
+            result.mitigation_roi = [{"measure": "No mitigation needed", "cost": 0, "savings": 0, "roi_pct": 0}]
+            logger.info("JRC financial impact for %s: $0 (no flood depth)", region_name)
+            return result
+
         # ── Risk-level dampening ───────────────────────────────────────────────
         # When detection says LOW or MEDIUM risk and GloFAS shows no elevated
         # discharge, dampen the financial impact to prevent unrealistic numbers.

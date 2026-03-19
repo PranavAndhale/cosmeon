@@ -166,11 +166,24 @@ class ForecastEngine:
                 seasonal, base_prob, historical_month_risk, upcoming, month_num
             )
 
+            # ── Orb-specific forecast metrics ──
+            # Infrastructure exposure: higher precip → more infrastructure stress
+            _infra_exp = round(min(0.98, max(0.02, min(1.0, precip / 300.0) * risk_probability * seasonal)), 3)
+            # Vegetation stress: dry months → high stress, wet months → low
+            if precip > 150:
+                _veg_stress = round(max(0.02, min(0.98, 0.05 + risk_probability * 0.1)), 3)
+            elif precip > 80:
+                _veg_stress = round(max(0.02, min(0.98, 0.15 + (1.0 - precip / 150.0) * 0.3)), 3)
+            else:
+                _veg_stress = round(max(0.02, min(0.98, 0.30 + (1.0 - precip / 80.0) * 0.5)), 3)
+
             monthly.append({
                 "month": month_str,
                 "month_name": month_name,
                 "risk_probability": round(risk_probability, 3),
                 "risk_level": risk_level,
+                "infra_exposure": _infra_exp,
+                "vegetation_stress_index": _veg_stress,
                 "confidence_lower": round(conf_lower, 3),
                 "confidence_upper": round(conf_upper, 3),
                 "seasonal_factor": round(seasonal, 2),

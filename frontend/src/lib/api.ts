@@ -108,6 +108,8 @@ export interface MonthlyForecast {
     month_name: string;
     risk_probability: number;
     risk_level: string;
+    infra_exposure: number;
+    vegetation_stress_index: number;
     confidence_lower: number;
     confidence_upper: number;
     seasonal_factor: number;
