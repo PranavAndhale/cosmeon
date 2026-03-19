@@ -197,19 +197,16 @@ class FloodPredictor:
         Features 7-12 (new):
           precip_7d, precip_30d, max_daily_rain_7d, precip_anomaly, soil_moisture, temperature
         """
-        if not flood_history:
-            return np.zeros((1, len(self.FEATURE_NAMES)))
-
-        # Extract flood percentages
-        flood_pcts = [h.get("flood_percentage", 0) for h in flood_history[-5:]]
-        mean_pct = np.mean(flood_pcts) if flood_pcts else 0
-        max_pct = np.max(flood_pcts) if flood_pcts else 0
+        # Extract flood percentages from history (may be empty for ad-hoc locations)
+        flood_pcts = [h.get("flood_percentage", 0) for h in (flood_history or [])[-5:]]
+        mean_pct = float(np.mean(flood_pcts)) if flood_pcts else 0.0
+        max_pct = float(np.max(flood_pcts)) if flood_pcts else 0.0
 
         # Trend (positive = increasing flood risk)
         if len(flood_pcts) >= 2:
-            trend = np.polyfit(range(len(flood_pcts)), flood_pcts, 1)[0]
+            trend = float(np.polyfit(range(len(flood_pcts)), flood_pcts, 1)[0])
         else:
-            trend = 0
+            trend = 0.0
 
         # External factors (original 3)
         ext = external_factors or {}
@@ -302,7 +299,7 @@ class FloodPredictor:
             logger.error("Failed to train on real data: %s. Falling back to synthetic.", e)
 
         # Fallback to synthetic
-        return self.train(self._generate_synthetic_data(500))
+        return self.train(self._generate_synthetic_data(1500))
 
     def train(self, training_data: list[dict]) -> dict:
         """
@@ -328,7 +325,7 @@ class FloodPredictor:
         """
         if len(training_data) < 10:
             logger.warning("Insufficient training data (%d samples). Generating synthetic data.", len(training_data))
-            training_data = self._generate_synthetic_data(500)
+            training_data = self._generate_synthetic_data(1500)
 
         X = []
         y = []
@@ -464,6 +461,17 @@ class FloodPredictor:
             logger.info("Model not trained. Attempting training with real data...")
             self.train_on_real_data()
 
+        # Auto-enrich with model_hub data when lat/lon are available.
+        # This ensures ALL prediction paths (active regions + ad-hoc) get
+        # the same ERA5/GloFAS-enriched features for accurate predictions.
+        if external_factors and "_lat" in external_factors and "_lon" in external_factors:
+            if "precip_7d" not in external_factors:
+                self._enrich_with_model_hub(
+                    external_factors,
+                    external_factors["_lat"],
+                    external_factors["_lon"],
+                )
+
         features = self._extract_features(flood_history, external_factors)
         features_scaled = self.scaler.transform(features)
 
@@ -553,6 +561,68 @@ class FloodPredictor:
         )
         return prediction
 
+    def _enrich_with_model_hub(self, factors_dict: dict, lat: float, lon: float) -> None:
+        """
+        Enrich external_factors in-place with model_hub data (ERA5, GloFAS).
+
+        ExternalDataIntegrator only provides basic rainfall/elevation.
+        model_hub has detailed ERA5 precipitation (7d/30d), soil moisture,
+        temperature anomaly, and GloFAS river discharge.
+        """
+        try:
+            from processing.model_hub import (
+                get_soil_moisture, get_temperature_anomaly, get_river_discharge,
+            )
+            import requests as _requests
+            from datetime import timedelta as _td
+            from datetime import date as _date
+
+            # Fetch recent ERA5 precipitation (7-day and 30-day)
+            end = _date.today()
+            start_30d = end - _td(days=30)
+            resp = _requests.get(
+                "https://archive-api.open-meteo.com/v1/archive",
+                params={
+                    "latitude": lat, "longitude": lon,
+                    "start_date": start_30d.isoformat(),
+                    "end_date": end.isoformat(),
+                    "daily": "precipitation_sum,temperature_2m_max",
+                },
+                timeout=15,
+            )
+            if resp.ok:
+                daily = resp.json().get("daily", {})
+                precip_vals = [p for p in (daily.get("precipitation_sum") or []) if p is not None]
+                temp_vals = [t for t in (daily.get("temperature_2m_max") or []) if t is not None]
+                if precip_vals:
+                    factors_dict["precip_30d"] = sum(precip_vals)
+                    factors_dict["precip_7d"] = sum(precip_vals[-7:]) if len(precip_vals) >= 7 else sum(precip_vals)
+                    factors_dict["max_daily_rain_7d"] = max(precip_vals[-7:]) if len(precip_vals) >= 7 else max(precip_vals)
+                    factors_dict["rainfall_mm"] = factors_dict["precip_7d"]
+                    avg_daily_30d = sum(precip_vals) / max(len(precip_vals), 1)
+                    avg_daily_7d = factors_dict["precip_7d"] / 7.0
+                    factors_dict["precip_anomaly"] = (avg_daily_7d - avg_daily_30d) / max(avg_daily_30d, 0.1)
+                if temp_vals:
+                    factors_dict["temperature"] = sum(temp_vals[-7:]) / min(len(temp_vals), 7)
+
+            soil = get_soil_moisture(lat, lon)
+            factors_dict["soil_moisture"] = soil.get("saturation_fraction", 0)
+
+            temp_anom = get_temperature_anomaly(lat, lon)
+            if "temperature_c" in temp_anom:
+                factors_dict["temperature"] = temp_anom["temperature_c"]
+
+            discharge = get_river_discharge(lat, lon)
+            discharge_anomaly = discharge.get("anomaly_sigma", 0)
+            if discharge_anomaly > 1.5:
+                factors_dict["risk_multiplier"] = max(
+                    factors_dict.get("risk_multiplier", 1.0),
+                    1.0 + discharge_anomaly * 0.3,
+                )
+
+        except Exception as e:
+            logger.warning("Model hub enrichment failed (using basic features): %s", e)
+
     def predict_by_coords(
         self,
         lat: float,
@@ -562,7 +632,8 @@ class FloodPredictor:
         """
         Predict flood risk for arbitrary coordinates (no database required).
 
-        Fetches external factors on the fly and runs the ensemble.
+        Fetches external factors on the fly and enriches with model_hub
+        data (ERA5, GloFAS) for more accurate predictions.
         """
         from processing.external_data import ExternalDataIntegrator
         integrator = ExternalDataIntegrator()
@@ -570,6 +641,8 @@ class FloodPredictor:
         factors_dict = factors.to_dict()
         factors_dict["_lat"] = lat
         factors_dict["_lon"] = lon
+
+        self._enrich_with_model_hub(factors_dict, lat, lon)
 
         return self.predict(
             flood_history=[],
@@ -607,6 +680,15 @@ class FloodPredictor:
         if not self.is_trained:
             self.train_on_real_data()
 
+        # Auto-enrich with model_hub data when lat/lon are available
+        if external_factors and "_lat" in external_factors and "_lon" in external_factors:
+            if "precip_7d" not in external_factors:
+                self._enrich_with_model_hub(
+                    external_factors,
+                    external_factors["_lat"],
+                    external_factors["_lon"],
+                )
+
         # Extract raw features (these are the 13 weather/terrain inputs)
         features = self._extract_features(flood_history, external_factors)
         features_scaled = self.scaler.transform(features)
@@ -615,7 +697,13 @@ class FloodPredictor:
         pred_class = self.model.predict(features_scaled)[0]
         pred_proba = self.model.predict_proba(features_scaled)[0]
         predicted_level = self.risk_labels[pred_class]
-        flood_probability = float(pred_proba[pred_class])
+        # flood_probability = P(HIGH) + P(CRITICAL) — probability of actual flood event
+        high_idx = self.risk_labels.index("HIGH") if "HIGH" in self.risk_labels else 2
+        crit_idx = self.risk_labels.index("CRITICAL") if "CRITICAL" in self.risk_labels else 3
+        if len(pred_proba) > max(high_idx, crit_idx):
+            flood_probability = float(pred_proba[high_idx] + pred_proba[crit_idx])
+        else:
+            flood_probability = float(pred_proba[pred_class])
 
         sorted_proba = sorted(pred_proba, reverse=True)
         confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
@@ -856,55 +944,101 @@ class FloodPredictor:
     # ── Synthetic data ──
 
     def _generate_synthetic_data(self, n_samples: int) -> list[dict]:
-        """Generate synthetic training data with all 13 features."""
+        """
+        Generate synthetic training data with CAUSAL feature → label relationships.
+
+        The label is determined BY the same features the model will see at
+        prediction time.  This ensures the model learns that high precipitation +
+        saturated soil + low elevation → HIGH/CRITICAL risk.
+
+        Feature correlations:
+            precip_7d ──┐
+            precip_30d ─┤
+            soil_moist ─┼──▶ risk_score ──▶ label
+            elevation ──┤
+            anomaly ────┤
+            season ─────┘
+        """
         np.random.seed(42)
         data = []
 
         for _ in range(n_samples):
-            # Random flood scenario
-            base_flood = np.random.beta(2, 10)  # Most regions have low flood %
-            rainfall = np.random.exponential(30)
-            elevation = np.random.uniform(0, 500)
+            # ── Generate correlated precipitation regime ─────────────────────
+            regime = np.random.choice(
+                ["dry", "moderate", "wet", "extreme"],
+                p=[0.25, 0.35, 0.25, 0.15],
+            )
+            if regime == "dry":
+                precip_7d = np.random.uniform(0, 20)
+                soil_moisture = np.random.uniform(0.05, 0.20)
+            elif regime == "moderate":
+                precip_7d = np.random.uniform(15, 70)
+                soil_moisture = np.random.uniform(0.15, 0.35)
+            elif regime == "wet":
+                precip_7d = np.random.uniform(50, 180)
+                soil_moisture = np.random.uniform(0.30, 0.50)
+            else:  # extreme
+                precip_7d = np.random.uniform(120, 500)
+                soil_moisture = np.random.uniform(0.40, 0.60)
+
+            # ── Derive correlated features ───────────────────────────────────
+            precip_30d = precip_7d * np.random.uniform(2.5, 5.0)
+            max_daily_rain = precip_7d * np.random.uniform(0.20, 0.65)
+            avg_daily_30d = precip_30d / 30.0
+            avg_daily_7d = precip_7d / 7.0
+            precip_anomaly = (avg_daily_7d - avg_daily_30d) / max(avg_daily_30d, 0.1)
+
+            # Elevation: mix of low-lying, moderate, and high
+            elevation = float(np.random.choice([
+                np.random.uniform(0, 20),      # coastal / very low
+                np.random.uniform(20, 100),     # low-moderate
+                np.random.uniform(100, 500),    # inland / high
+            ], p=[0.30, 0.40, 0.30]))
+
             month = np.random.randint(1, 13)
+            temperature = np.random.uniform(15, 42)
+            monsoon = month in [6, 7, 8, 9]
+            seasonal_factor = 1.5 if monsoon else 1.0
 
-            # Derived weather features
-            precip_7d = rainfall * np.random.uniform(0.5, 1.5)
-            precip_30d = precip_7d * np.random.uniform(3, 5)
-            max_daily_rain = precip_7d * np.random.uniform(0.3, 0.8)
-            precip_anomaly = np.random.normal(0, 1)
-            soil_moisture = np.random.uniform(0.05, 0.5)
-            temperature = np.random.uniform(15, 40)
+            # Historical flood % — correlated with current conditions
+            if regime in ["wet", "extreme"]:
+                base_flood = np.random.beta(3, 5)     # mean ~0.375
+            else:
+                base_flood = np.random.beta(1.5, 12)   # mean ~0.11
 
-            # Monsoon months increase flood risk
-            seasonal_factor = 1.5 if month in [6, 7, 8, 9] else 1.0
+            # ── LABEL: determined by the SAME features the model will see ────
+            risk_score = 0.0
+            risk_score += min(1.0, precip_7d / 200.0) * 0.30          # precip dominant
+            risk_score += min(1.0, soil_moisture / 0.50) * 0.20       # soil amplifier
+            risk_score += max(0.0, 1.0 - elevation / 200.0) * 0.15   # low elev risk
+            risk_score += max(0.0, min(1.0, precip_anomaly / 2.0)) * 0.10
+            risk_score += (0.10 if monsoon else 0.0)                  # seasonal
+            risk_score += min(0.5, base_flood) * 0.05                 # history
+            risk_score += min(1.0, max_daily_rain / 100.0) * 0.10    # intensity
 
-            # Determine true risk level using multiple factors
-            risk_score = base_flood * seasonal_factor
-            if rainfall > 100:
-                risk_score *= 1.5
-            if elevation < 50:
-                risk_score *= 1.3
-            if precip_anomaly > 1.5:
-                risk_score *= 1.3
-            if soil_moisture > 0.35:
-                risk_score *= 1.2
+            risk_score *= seasonal_factor
+            risk_score += np.random.normal(0, 0.04)   # noise
+            risk_score = max(0.0, risk_score)
 
-            if risk_score > 0.25:
+            if risk_score > 0.55:
                 label = "CRITICAL"
-            elif risk_score > 0.15:
+            elif risk_score > 0.38:
                 label = "HIGH"
-            elif risk_score > 0.05:
+            elif risk_score > 0.18:
                 label = "MEDIUM"
             else:
                 label = "LOW"
 
-            # Create history
-            history = [{"flood_percentage": base_flood + np.random.normal(0, 0.02)} for _ in range(5)]
+            # ── Build sample ─────────────────────────────────────────────────
+            history = [
+                {"flood_percentage": max(0, base_flood + np.random.normal(0, 0.02))}
+                for _ in range(5)
+            ]
 
             data.append({
                 "flood_history": history,
                 "external_factors": {
-                    "rainfall_mm": rainfall,
+                    "rainfall_mm": precip_7d,
                     "elevation_mean_m": elevation,
                     "risk_multiplier": seasonal_factor,
                 },
@@ -920,5 +1054,10 @@ class FloodPredictor:
                 },
                 "label": label,
             })
+
+        # Log label distribution for verification
+        from collections import Counter
+        dist = Counter(d["label"] for d in data)
+        logger.info("Synthetic data distribution (%d samples): %s", n_samples, dict(dist))
 
         return data
