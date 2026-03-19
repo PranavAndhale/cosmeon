@@ -1935,7 +1935,6 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
 
     Also includes FAO-56 ET0 evapotranspiration for real vegetation stress.
     """
-    import math
     import requests
     from collections import defaultdict
     from datetime import datetime, timedelta
@@ -1970,15 +1969,6 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
     if not dates or not precip:
         return []
 
-    # Compute total bounding-box area (km²) for flood-area estimate
-    lat_mid = (bbox[1] + bbox[3]) / 2
-    total_area_km2 = max(
-        1.0,
-        abs(bbox[3] - bbox[1]) * 111.0
-        * abs(bbox[2] - bbox[0]) * 111.0
-        * math.cos(math.radians(lat_mid)),
-    )
-
     # Group by YYYY-MM
     monthly: dict = defaultdict(lambda: {"precip": [], "et0": []})
     for i, d in enumerate(dates):
@@ -2008,6 +1998,7 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
 
         total_precip = sum(days_p)
         avg_daily = total_precip / max(n_days, 1)
+        max_precip_day = max(days_p) if days_p else 0.0
         heavy_days = sum(1 for d in days_p if d > 20)
         extreme_days = sum(1 for d in days_p if d > 50)
 
@@ -2019,9 +2010,6 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
         percentile = (rank / max(len(same_month_totals), 1)) * 100.0
         avg_flood_pct = round(min(100.0, percentile), 2)
         max_flood_pct = round(min(100.0, avg_flood_pct * 1.3), 2)
-
-        # Estimated flooded area from percentile
-        flood_area_km2 = total_area_km2 * avg_flood_pct / 100.0
 
         # Precipitation anomaly vs same-month climatological mean
         clim_mean = sum(same_month_totals) / max(len(same_month_totals), 1)
@@ -2047,23 +2035,18 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
         else:
             risk = "LOW"
 
-        # Confidence scales with data completeness and archive depth
-        completeness = min(1.0, n_days / 28.0)
-        archive_depth = min(1.0, len(same_month_totals) / 5.0)
-        avg_confidence = round(80.0 + completeness * 10.0 + archive_depth * 7.0, 1)
-
         result.append({
             "month":                month_key,
             "month_label":          datetime.strptime(month_key, "%Y-%m").strftime("%b %Y"),
             "avg_flood_pct":        avg_flood_pct,
             "max_flood_pct":        max_flood_pct,
-            "avg_flood_area_km2":   round(flood_area_km2, 1),
-            "max_flood_area_km2":   round(flood_area_km2 * 1.5, 1),
+            "total_precip_mm":      round(total_precip, 1),
+            "max_precip_day_mm":    round(max_precip_day, 1),
             "avg_water_change_pct": water_change,
             "max_water_change_pct": round(water_change * 1.5, 2),
             "avg_vegetation_stress": veg_stress,
             "max_vegetation_stress": round(veg_stress * 1.5, 2),
-            "avg_confidence":       avg_confidence,
+            "heavy_rain_days":      heavy_days,
             "dominant_risk_level":  risk,
             "risk_distribution": {
                 "LOW":      1 if risk == "LOW"      else 0,
@@ -2072,8 +2055,6 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
                 "CRITICAL": 1 if risk == "CRITICAL" else 0,
             },
             "assessment_count":     n_days,
-            "total_precip_mm":      round(total_precip, 1),
-            "heavy_rain_days":      heavy_days,
         })
 
     return result

@@ -292,10 +292,15 @@ export default function GeospatialEngine() {
   };
 
   const openTrends = async () => {
-    if (!selectedRegion) return;
-    setShowTrends(true); setTrendLoading(true);
-    const d = await fetchTrends(selectedRegion.id, 24);
-    setTrendData(d); setTrendLoading(false);
+    if (selectedRegion) {
+      setShowTrends(true); setTrendLoading(true);
+      const d = await fetchTrends(selectedRegion.id, 24);
+      setTrendData(d); setTrendLoading(false);
+    } else if (adHocLocation) {
+      setShowTrends(true); setTrendLoading(true);
+      const d = await fetchTrendsLocation(adHocLocation.lat, adHocLocation.lon, 24);
+      setTrendData(d); setTrendLoading(false);
+    }
   };
 
 
@@ -547,7 +552,7 @@ export default function GeospatialEngine() {
       return adHocTrendData.trend.map(t => ({
         date: t.month_label,
         flood: t.avg_flood_pct,
-        confidence: t.avg_confidence,
+        confidence: t.heavy_rain_days,
         water_change: t.avg_water_change_pct,
         vegetation_stress: t.avg_vegetation_stress,
       }));
@@ -1325,7 +1330,7 @@ export default function GeospatialEngine() {
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
                     <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                      <TrendingUp size={14} className="text-violet-400" /> 6-Month Forecast
+                      <TrendingUp size={14} className="text-violet-400" /> 6-Month Flood Risk Forecast
                     </span>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                   </button>
@@ -2048,6 +2053,45 @@ export default function GeospatialEngine() {
                         );
                       })()}
 
+                      {/* ── Risk History Mini Chart (Ad-Hoc, from ERA5 trend data) ── */}
+                      {displayChartData.length > 0 && (
+                        <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4">
+                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} block mb-1`}>{currentOrb.chartLabel}</span>
+                          <span className="text-[11px] text-gray-600 font-mono block mb-3">
+                            {activeOrb === 'flood' ? 'Historical flood coverage from satellite analysis over the past 12 months' : activeOrb === 'infra' ? 'Water change percentage impacting infrastructure over time' : 'Model confidence trend based on data quality and prediction accuracy'}
+                          </span>
+                          <div className="h-[120px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={displayChartData}>
+                                <defs>
+                                  <linearGradient id="miniGradAdHoc" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor={primaryColor} stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor={primaryColor} stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                                <XAxis dataKey="date" hide />
+                                <YAxis hide />
+                                <Area type="monotone" dataKey={chartKey} stroke={primaryColor} fill="url(#miniGradAdHoc)" strokeWidth={2} />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Historical Trends Button (Ad-Hoc) ── */}
+                      <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
+                        <button
+                          onClick={openTrends}
+                          className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                        >
+                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                            <TrendingUp size={14} className="text-cyan-400" /> Historical Trend Analysis
+                          </span>
+                          <ChevronRight size={14} className="text-gray-500" />
+                        </button>
+                      </div>
+
                       {/* ── 6-Month Forecast Panel (Ad-Hoc) ── */}
                       <div className="bg-[#0A1628]/80 border border-violet-500/20 rounded-xl overflow-hidden shrink-0">
                         <button
@@ -2064,7 +2108,7 @@ export default function GeospatialEngine() {
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
                           <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                            <TrendingUp size={14} className="text-violet-400" /> 6-Month Forecast
+                            <TrendingUp size={14} className="text-violet-400" /> 6-Month Flood Risk Forecast
                           </span>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                         </button>
@@ -2656,7 +2700,7 @@ export default function GeospatialEngine() {
                 <div>
                   <h2 className="text-lg font-mono font-bold text-white flex items-center gap-2">
                     <TrendingUp size={18} className="text-cyan-400" />
-                    Historical Risk Trend — {trendData?.region_name || selectedRegion?.name}
+                    Historical Risk Trend — {trendData?.region_name || selectedRegion?.name || adHocLocation?.name}
                   </h2>
                   <p className="text-[12px] font-mono text-gray-500 mt-0.5">
                     {trendData ? `${trendData.data_points} monthly snapshots · 24-month view` : 'Loading trend data...'}
@@ -2717,33 +2761,33 @@ export default function GeospatialEngine() {
                       </div>
                     </div>
 
-                    {/* Area affected + Confidence side by side */}
+                    {/* Monthly Precipitation + Heavy Rain Days side by side */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
-                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">{currentOrb.id === 'flood' ? 'Avg Flood Area km²' : currentOrb.id === 'infra' ? 'Avg Exposure Area km²' : 'Avg Stress Area km²'}</h3>
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Monthly Precipitation mm</h3>
                         <div className="h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
                               <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                               <YAxis tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
-                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(0)} km²`]} />
-                              <Bar dataKey="avg_flood_area_km2" fill={primaryColor} fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Area km²" />
+                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(1)} mm`]} />
+                              <Bar dataKey="total_precip_mm" fill={primaryColor} fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Precipitation mm" />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
                       <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
-                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Model Confidence %</h3>
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Heavy Rain Days (&gt;20mm)</h3>
                         <div className="h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                            <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
                               <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
-                              <YAxis domain={[80, 100]} tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
-                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v).toFixed(1)}%`]} />
-                              <Line type="monotone" dataKey="avg_confidence" stroke="#8b5cf6" strokeWidth={2} dot={false} name="Confidence" />
-                            </LineChart>
+                              <YAxis tick={{ fill: '#4b5563', fontSize: 9, fontFamily: 'monospace' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                              <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11 }} formatter={(v) => [`${Number(v)} days`]} />
+                              <Bar dataKey="heavy_rain_days" fill="#8b5cf6" fillOpacity={0.8} radius={[2, 2, 0, 0]} name="Heavy Rain Days" />
+                            </BarChart>
                           </ResponsiveContainer>
                         </div>
                       </div>
@@ -2754,7 +2798,7 @@ export default function GeospatialEngine() {
                       <table className="w-full text-[12px] font-mono">
                         <thead>
                           <tr className="border-b border-white/5 bg-black/20">
-                            {['Month', 'Dominant Risk', `Avg ${currentOrb.chartLabel}`, `Peak ${currentOrb.chartLabel}`, 'Avg Area km²', 'Confidence', 'Assessments'].map(h => (
+                            {['Month', 'Dominant Risk', `Avg ${currentOrb.chartLabel}`, `Peak ${currentOrb.chartLabel}`, 'Precip mm', 'Heavy Rain Days', 'Assessments'].map(h => (
                               <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-widest text-gray-600">{h}</th>
                             ))}
                           </tr>
@@ -2770,8 +2814,8 @@ export default function GeospatialEngine() {
                                 <td className="px-4 py-2.5"><span className="font-bold" style={{ color: rc }}>{m.dominant_risk_level}</span></td>
                                 <td className="px-4 py-2.5 text-gray-400">{avgValue.toFixed(1)}%</td>
                                 <td className="px-4 py-2.5 text-gray-400">{maxValue.toFixed(1)}%</td>
-                                <td className="px-4 py-2.5 text-gray-400">{m.avg_flood_area_km2.toFixed(0)}</td>
-                                <td className="px-4 py-2.5 text-gray-400">{m.avg_confidence.toFixed(1)}%</td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.total_precip_mm.toFixed(1)}</td>
+                                <td className="px-4 py-2.5 text-gray-400">{m.heavy_rain_days}</td>
                                 <td className="px-4 py-2.5 text-gray-500">{m.assessment_count}</td>
                               </tr>
                             );
