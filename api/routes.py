@@ -1318,11 +1318,29 @@ def forecast_location(body: LocationRequest):
             annual_mean = sum(monthly_precip) / max(len(monthly_precip), 1) if monthly_precip else 80.0
             seasonal_factor = round(precip_mm / max(annual_mean, 1.0), 2)
 
+            # ── Orb-specific forecast metrics ──
+            # Infrastructure exposure: higher precip → more infrastructure stress
+            # Scale: 0–1 based on precip relative to 300mm threshold (severe flooding)
+            infra_exposure = round(min(1.0, precip_mm / 300.0) * risk_prob * seasonal_factor, 3)
+            infra_exposure = min(0.98, max(0.02, infra_exposure))
+
+            # Vegetation stress: dry months (low precip) → high stress, wet months → low
+            # Inverse relationship with precipitation (FAO-56 principle)
+            if precip_mm > 150:
+                veg_stress_idx = round(0.05 + risk_prob * 0.1, 3)  # wet = low stress
+            elif precip_mm > 80:
+                veg_stress_idx = round(0.15 + (1.0 - precip_mm / 150.0) * 0.3, 3)
+            else:
+                veg_stress_idx = round(0.30 + (1.0 - precip_mm / 80.0) * 0.5, 3)
+            veg_stress_idx = min(0.98, max(0.02, veg_stress_idx))
+
             monthly_forecast.append({
                 "month": target.strftime("%Y-%m"),
                 "month_name": month_name,
                 "risk_probability": risk_prob,
                 "risk_level": risk_level,
+                "infra_exposure": infra_exposure,
+                "vegetation_stress_index": veg_stress_idx,
                 "precipitation_forecast_mm": round(precip_mm, 1),
                 "confidence_lower": confidence_lower,
                 "confidence_upper": confidence_upper,
@@ -1336,6 +1354,18 @@ def forecast_location(body: LocationRequest):
         probs = [m["risk_probability"] for m in monthly_forecast]
         peak = max(monthly_forecast, key=lambda m: m["risk_probability"])
 
+        # Determine overall trend: compare first half avg vs second half avg
+        first_half = probs[:3]
+        second_half = probs[3:]
+        first_avg = sum(first_half) / max(len(first_half), 1)
+        second_avg = sum(second_half) / max(len(second_half), 1)
+        if second_avg > first_avg * 1.15:
+            overall_trend = "escalating"
+        elif second_avg < first_avg * 0.85:
+            overall_trend = "declining"
+        else:
+            overall_trend = "stable"
+
         return {
             "location": {"lat": lat, "lon": lon, "name": name},
             "horizon_months": 6,
@@ -1343,6 +1373,7 @@ def forecast_location(body: LocationRequest):
             "summary": {
                 "peak_risk_month": peak["month_name"],
                 "peak_probability": peak["risk_probability"],
+                "overall_trend": overall_trend,
                 "avg_risk_probability": round(sum(probs) / len(probs), 3),
                 "months_above_moderate": sum(1 for p in probs if p >= 0.20),
             },

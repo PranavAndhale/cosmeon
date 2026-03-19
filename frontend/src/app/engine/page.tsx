@@ -1330,7 +1330,7 @@ export default function GeospatialEngine() {
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
                     <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                      <TrendingUp size={14} className="text-violet-400" /> 6-Month Flood Risk Forecast
+                      <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
                     </span>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                   </button>
@@ -1345,65 +1345,76 @@ export default function GeospatialEngine() {
                             </div>
                           )}
 
-                          {forecastData && !forecastLoading && (
+                          {forecastData && !forecastLoading && forecastData.summary && forecastData.monthly_forecast && (
                             <>
                               {/* Summary Strip */}
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`text-[12px] font-mono px-2.5 py-1 rounded-full border ${forecastData.summary.overall_trend === 'escalating' ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                  : forecastData.summary.overall_trend === 'declining' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                <span className={`text-[12px] font-mono px-2.5 py-1 rounded-full border ${(forecastData.summary.overall_trend ?? 'stable') === 'escalating' ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                  : (forecastData.summary.overall_trend ?? 'stable') === 'declining' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                     : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
                                   }`}>
-                                  Trend: {forecastData.summary.overall_trend.toUpperCase()}
+                                  Trend: {(forecastData.summary.overall_trend ?? 'STABLE').toUpperCase()}
                                 </span>
                                 <span className="text-[12px] font-mono text-gray-500">
                                   Peak: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
                                 </span>
                               </div>
 
-                              {/* Risk Probability Chart */}
+                              {/* Orb-specific Forecast Chart */}
                               <div className="h-[140px]">
                                 <ResponsiveContainer width="100%" height="100%">
-                                  <AreaChart data={forecastData.monthly_forecast.map(m => ({
-                                    month: m.month_name.split(' ')[0].slice(0, 3),
-                                    risk: Math.round(m.risk_probability * 100),
-                                    lower: Math.round(m.confidence_lower * 100),
-                                    upper: Math.round(m.confidence_upper * 100),
-                                  }))}>
+                                  <AreaChart data={forecastData.monthly_forecast.map(m => {
+                                    const val = activeOrb === 'flood' ? m.risk_probability
+                                      : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
+                                      : (m.vegetation_stress_index ?? m.risk_probability);
+                                    return {
+                                      month: m.month_name.split(' ')[0].slice(0, 3),
+                                      risk: Math.round(val * 100),
+                                      lower: Math.round((m.confidence_lower ?? val * 0.7) * 100),
+                                      upper: Math.round((m.confidence_upper ?? val * 1.3) * 100),
+                                    };
+                                  })}>
                                     <defs>
                                       <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                        <stop offset="5%" stopColor={primaryColor} stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor={primaryColor} stopOpacity={0} />
                                       </linearGradient>
                                       <linearGradient id="confGrad" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.1} />
-                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.05} />
+                                        <stop offset="5%" stopColor={primaryColor} stopOpacity={0.1} />
+                                        <stop offset="95%" stopColor={primaryColor} stopOpacity={0.05} />
                                       </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                                     <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
                                     <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} unit="%" />
                                     <RechartsTooltip
-                                      contentStyle={{ background: '#0A1628', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8, fontSize: 12 }}
-                                      formatter={(value: number | string | undefined) => [`${value ?? 0}%`, 'Risk']}
+                                      contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12 }}
+                                      formatter={(value: number | string | undefined) => [`${value ?? 0}%`, currentOrb.chartLabel]}
                                     />
                                     <Area type="monotone" dataKey="upper" stroke="none" fill="url(#confGrad)" />
                                     <Area type="monotone" dataKey="lower" stroke="none" fill="transparent" />
-                                    <Area type="monotone" dataKey="risk" stroke="#8b5cf6" fill="url(#forecastGrad)" strokeWidth={2.5} dot={{ r: 3, fill: '#8b5cf6' }} />
+                                    <Area type="monotone" dataKey="risk" stroke={primaryColor} fill="url(#forecastGrad)" strokeWidth={2.5} dot={{ r: 3, fill: primaryColor }} />
                                   </AreaChart>
                                 </ResponsiveContainer>
                               </div>
 
                               {/* Monthly Cards */}
                               <div className="grid grid-cols-3 gap-1.5">
-                                {forecastData.monthly_forecast.slice(0, 6).map(m => (
-                                  <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
-                                    <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
-                                    <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: m.risk_level === 'CRITICAL' ? '#ef4444' : m.risk_level === 'HIGH' ? '#f59e0b' : m.risk_level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
-                                      {(m.risk_probability * 100).toFixed(0)}%
+                                {forecastData.monthly_forecast.slice(0, 6).map(m => {
+                                  const val = activeOrb === 'flood' ? m.risk_probability
+                                    : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
+                                    : (m.vegetation_stress_index ?? m.risk_probability);
+                                  const level = val >= 0.70 ? 'CRITICAL' : val >= 0.45 ? 'HIGH' : val >= 0.20 ? 'MEDIUM' : 'LOW';
+                                  return (
+                                    <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
+                                      <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
+                                      <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
+                                        {(val * 100).toFixed(0)}%
+                                      </div>
+                                      <div className="text-[10px] text-gray-600 font-mono">{level}</div>
                                     </div>
-                                    <div className="text-[10px] text-gray-600 font-mono">{m.risk_level}</div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </>
                           )}
@@ -2108,7 +2119,7 @@ export default function GeospatialEngine() {
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
                           <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                            <TrendingUp size={14} className="text-violet-400" /> 6-Month Flood Risk Forecast
+                            <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
                           </span>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                         </button>
@@ -2121,14 +2132,14 @@ export default function GeospatialEngine() {
                                     <div className="w-8 h-8 border-2 border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
                                   </div>
                                 )}
-                                {forecastData && !forecastLoading && (
+                                {forecastData && !forecastLoading && forecastData.summary && forecastData.monthly_forecast && (
                                   <>
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className={`text-[12px] font-mono px-2.5 py-1 rounded-full border ${forecastData.summary.overall_trend === 'escalating' ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                        : forecastData.summary.overall_trend === 'declining' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                      <span className={`text-[12px] font-mono px-2.5 py-1 rounded-full border ${(forecastData.summary.overall_trend ?? 'stable') === 'escalating' ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                        : (forecastData.summary.overall_trend ?? 'stable') === 'declining' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                           : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
                                         }`}>
-                                        Trend: {forecastData.summary.overall_trend.toUpperCase()}
+                                        Trend: {(forecastData.summary.overall_trend ?? 'STABLE').toUpperCase()}
                                       </span>
                                       <span className="text-[12px] font-mono text-gray-500">
                                         Peak: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
@@ -2136,37 +2147,48 @@ export default function GeospatialEngine() {
                                     </div>
                                     <div className="h-[140px]">
                                       <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={forecastData.monthly_forecast.map(m => ({
-                                          month: m.month_name.split(' ')[0].slice(0, 3),
-                                          risk: Math.round(m.risk_probability * 100),
-                                        }))}>
+                                        <AreaChart data={forecastData.monthly_forecast.map(m => {
+                                          const val = activeOrb === 'flood' ? m.risk_probability
+                                            : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
+                                            : (m.vegetation_stress_index ?? m.risk_probability);
+                                          return {
+                                            month: m.month_name.split(' ')[0].slice(0, 3),
+                                            risk: Math.round(val * 100),
+                                          };
+                                        })}>
                                           <defs>
                                             <linearGradient id="forecastGradAdhoc" x1="0" y1="0" x2="0" y2="1">
-                                              <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.4} />
-                                              <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                              <stop offset="5%" stopColor={primaryColor} stopOpacity={0.4} />
+                                              <stop offset="95%" stopColor={primaryColor} stopOpacity={0} />
                                             </linearGradient>
                                           </defs>
                                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                                           <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
                                           <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} unit="%" />
                                           <RechartsTooltip
-                                            contentStyle={{ background: '#0A1628', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8, fontSize: 12 }}
-                                            formatter={(value: number | string | undefined) => [`${value ?? 0}%`, 'Risk']}
+                                            contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12 }}
+                                            formatter={(value: number | string | undefined) => [`${value ?? 0}%`, currentOrb.chartLabel]}
                                           />
-                                          <Area type="monotone" dataKey="risk" stroke="#8b5cf6" fill="url(#forecastGradAdhoc)" strokeWidth={2.5} dot={{ r: 3, fill: '#8b5cf6' }} />
+                                          <Area type="monotone" dataKey="risk" stroke={primaryColor} fill="url(#forecastGradAdhoc)" strokeWidth={2.5} dot={{ r: 3, fill: primaryColor }} />
                                         </AreaChart>
                                       </ResponsiveContainer>
                                     </div>
                                     <div className="grid grid-cols-3 gap-1.5">
-                                      {forecastData.monthly_forecast.slice(0, 6).map(m => (
-                                        <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
-                                          <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
-                                          <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: m.risk_level === 'CRITICAL' ? '#ef4444' : m.risk_level === 'HIGH' ? '#f59e0b' : m.risk_level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
-                                            {(m.risk_probability * 100).toFixed(0)}%
+                                      {forecastData.monthly_forecast.slice(0, 6).map(m => {
+                                        const val = activeOrb === 'flood' ? m.risk_probability
+                                          : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
+                                          : (m.vegetation_stress_index ?? m.risk_probability);
+                                        const level = val >= 0.70 ? 'CRITICAL' : val >= 0.45 ? 'HIGH' : val >= 0.20 ? 'MEDIUM' : 'LOW';
+                                        return (
+                                          <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
+                                            <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
+                                            <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
+                                              {(val * 100).toFixed(0)}%
+                                            </div>
+                                            <div className="text-[10px] text-gray-600 font-mono">{level}</div>
                                           </div>
-                                          <div className="text-[10px] text-gray-600 font-mono">{m.risk_level}</div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   </>
                                 )}
