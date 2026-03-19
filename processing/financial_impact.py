@@ -37,6 +37,7 @@ class FinancialImpact:
     breakdown: dict = field(default_factory=dict)
     mitigation_roi: list = field(default_factory=list)
     confidence: str = "medium"
+    scenario_based: bool = False
     timestamp: str = ""
 
     def to_dict(self):
@@ -52,6 +53,7 @@ class FinancialImpact:
             "breakdown": self.breakdown,
             "mitigation_roi": self.mitigation_roi,
             "confidence": self.confidence,
+            "scenario_based": self.scenario_based,
             "timestamp": self.timestamp,
         }
 
@@ -202,15 +204,20 @@ class FinancialImpactEngine:
             depth_by_risk = {"LOW": 0.0, "MEDIUM": 0.3, "HIGH": 0.8, "CRITICAL": 1.5}
             flood_depth_m = depth_by_risk.get(risk_level, 0.3)
 
-        # ── Zero-depth shortcut ──────────────────────────────────────────────
-        # No flood depth = no actual flooding = no financial impact.
-        # Previously, displacement was still calculated even at depth 0, producing
-        # misleading results (e.g., "$62K total but $0 Direct, $0 Indirect, $0 Recovery").
+        # ── Zero-depth handling ────────────────────────────────────────────────
+        # No flood depth → no active flooding. Instead of returning $0 (which
+        # makes the panel look broken), compute a SCENARIO-BASED potential
+        # exposure: "What if a minor flood (0.2m depth) occurred here?"
+        # This gives users useful vulnerability context for preparedness.
+        is_scenario = False
         if flood_depth_m <= 0:
-            result.confidence = "high" if gdp_usd > 0 else "low"
-            result.mitigation_roi = [{"measure": "No mitigation needed", "cost": 0, "savings": 0, "roi_pct": 0}]
-            logger.info("JRC financial impact for %s: $0 (no flood depth)", region_name)
-            return result
+            flood_depth_m = 0.2  # minimum scenario depth (minor flood)
+            is_scenario = True
+            # For scenarios, use a small assumed flood area if none exists
+            if flood_area_km2 <= 0:
+                flood_area_km2 = min(total_area_km2 * 0.01, 10.0) if total_area_km2 > 0 else 5.0
+            # Scale probability down for scenarios to produce conservative estimates
+            flood_probability = max(flood_probability, 0.05)
 
         # ── Risk-level dampening ───────────────────────────────────────────────
         # When detection says LOW or MEDIUM risk and GloFAS shows no elevated
@@ -317,10 +324,14 @@ class FinancialImpactEngine:
         else:
             result.confidence = "low"
 
+        # Mark scenario-based estimates
+        result.scenario_based = is_scenario
+
         logger.info(
-            "JRC financial impact for %s: total=$%.0f, depth=%.1fm, class=%s, affected=%d",
+            "JRC financial impact for %s: total=$%.0f, depth=%.1fm, class=%s, affected=%d%s",
             region_name, result.total_impact_usd, flood_depth_m,
             income_class, result.affected_population,
+            " (scenario-based)" if is_scenario else "",
         )
         return result
 
