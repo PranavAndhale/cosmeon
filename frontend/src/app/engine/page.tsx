@@ -229,7 +229,7 @@ export default function GeospatialEngine() {
   const [geoLoading, setGeoLoading] = useState(false);
   const geoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geoRequestId = useRef(0); // increments on every search to discard stale responses
-  const [activeSource, setActiveSource] = useState("Sentinel-2");
+  const [activeSource, setActiveSource] = useState("MODIS");
   const [activeOrb, setActiveOrb] = useState<OrbKey>("flood");
   const [hoverInfo, setHoverInfo] = useState<Region | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -852,7 +852,7 @@ export default function GeospatialEngine() {
         <div className={`${glassClass} p-5 flex flex-col gap-4`}>
           <h2 className={`text-[13px] uppercase text-gray-400 ${textMono} tracking-widest`}>Data Source</h2>
           <div className="flex bg-[#151A22] rounded-lg p-1 border border-white/10 text-[13px] font-mono">
-            {['Sentinel-1', 'Sentinel-2', 'Landsat'].map(s => (
+            {['MODIS', 'ERA5', 'GloFAS'].map(s => (
               <button key={s} onClick={() => setActiveSource(s)} className={`flex-1 py-1.5 rounded-md transition-all ${activeSource === s ? 'bg-white/10 text-white shadow-md' : 'text-gray-500 hover:text-white/80'}`}>{s}</button>
             ))}
           </div>
@@ -1455,7 +1455,7 @@ export default function GeospatialEngine() {
                   </AnimatePresence>
                 </div>
 
-                {/* ── Multi-Sensor Fusion Panel ── */}
+                {/* ── Multi-Source Analysis Panel ── */}
                 <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
                   <button
                     onClick={async () => {
@@ -1471,7 +1471,7 @@ export default function GeospatialEngine() {
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
                     <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
-                      <Radio size={14} className="text-cyan-400" /> Sensor Fusion
+                      <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
                     </span>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
                   </button>
@@ -1480,7 +1480,7 @@ export default function GeospatialEngine() {
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                         <div className="px-4 pb-4 flex flex-col gap-2.5">
                           <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
-                            Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting — unlike single-source analysis, this fuses all satellite sources for robust flood detection even through cloud cover.
+                            Combines NASA MODIS satellite NDVI, ERA5 thermal reanalysis, Open-Meteo weather, and model-estimated radar data using adaptive weighting for comprehensive flood detection across data sources.
                           </div>
                           {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
                           {fusionData && !fusionLoading && (
@@ -1490,7 +1490,7 @@ export default function GeospatialEngine() {
                                   { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF', desc: 'Combined multi-sensor flood likelihood' },
                                   { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80', desc: 'Vegetation health anomaly from optical' },
                                   { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc', desc: 'Ground water saturation from weather' },
-                                  { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage from SAR' },
+                                  { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage estimate' },
                                   { label: 'Quality', value: fusionData.quality_score, color: '#facc15', desc: 'Overall data reliability score' },
                                 ].map(s => (
                                   <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5" title={s.desc}>
@@ -1522,7 +1522,7 @@ export default function GeospatialEngine() {
                               )}
                               {fusionData.cloud_penetration_used && (
                                 <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1.5">
-                                  <Radio size={10} /> SAR cloud-penetration active — optical blocked by clouds, SAR enables analysis
+                                  <Radio size={10} /> Cloud-penetration model active — optical data limited, model-based radar estimate used
                                 </div>
                               )}
                               <div className="text-[10px] font-mono text-gray-600">
@@ -2231,7 +2231,7 @@ export default function GeospatialEngine() {
                         </AnimatePresence>
                       </div>
 
-                      {/* ── Sensor Fusion Panel (Ad-Hoc) ── */}
+                      {/* ── Multi-Source Analysis Panel (Ad-Hoc) ── */}
                       <div className="bg-[#0A1628]/80 border border-cyan-500/20 rounded-xl overflow-hidden shrink-0">
                         <button
                           onClick={async () => {
@@ -2247,7 +2247,7 @@ export default function GeospatialEngine() {
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
                           <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
-                            <Radio size={14} className="text-cyan-400" /> Sensor Fusion
+                            <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
                           </span>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
                         </button>
@@ -2256,7 +2256,7 @@ export default function GeospatialEngine() {
                             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                               <div className="px-4 pb-4 flex flex-col gap-2.5">
                                 <div className="text-[11px] text-gray-500 font-mono leading-relaxed">
-                                  Combines SAR (cloud-proof), optical, thermal, and weather data using adaptive weighting — unlike single-source analysis, this fuses all satellite sources for robust flood detection even through cloud cover.
+                                  Combines NASA MODIS satellite NDVI, ERA5 thermal reanalysis, Open-Meteo weather, and model-estimated radar data using adaptive weighting for comprehensive flood detection across data sources.
                                 </div>
                                 {fusionLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" /></div>}
                                 {fusionData && !fusionLoading && (
@@ -2266,7 +2266,7 @@ export default function GeospatialEngine() {
                                         { label: 'Flood Conf.', value: fusionData.flood_confidence, color: '#00E5FF', desc: 'Combined multi-sensor flood likelihood' },
                                         { label: 'Veg Stress', value: fusionData.vegetation_stress, color: '#4ade80', desc: 'Vegetation health anomaly from optical' },
                                         { label: 'Soil Sat.', value: fusionData.soil_saturation, color: '#c084fc', desc: 'Ground water saturation from weather' },
-                                        { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage from SAR' },
+                                        { label: 'Water Extent', value: fusionData.surface_water_extent_pct, color: '#38bdf8', desc: 'Surface water coverage estimate' },
                                         { label: 'Quality', value: fusionData.quality_score, color: '#facc15', desc: 'Overall data reliability score' },
                                       ].map(s => (
                                         <div key={s.label} className="bg-[#151A22] rounded-lg p-2 border border-white/5" title={s.desc}>
@@ -2297,7 +2297,7 @@ export default function GeospatialEngine() {
                                     )}
                                     {fusionData.cloud_penetration_used && (
                                       <div className="text-[11px] font-mono text-cyan-400 flex items-center gap-1.5">
-                                        <Radio size={10} /> SAR cloud-penetration active — optical blocked by clouds, SAR enables analysis
+                                        <Radio size={10} /> Cloud-penetration model active — optical data limited, model-based radar estimate used
                                       </div>
                                     )}
                                     <div className="text-[10px] font-mono text-gray-600">

@@ -184,6 +184,8 @@ class FinancialImpactEngine:
         region_name: str = "Unknown",
         gdp_usd: float = 0.0,
         discharge_anomaly: float = 0.0,
+        lat: float = 0.0,
+        lon: float = 0.0,
     ) -> FinancialImpact:
         """
         Estimate financial impact using JRC depth-damage functions.
@@ -207,9 +209,9 @@ class FinancialImpactEngine:
         # ── Zero-depth handling ────────────────────────────────────────────────
         # No flood depth → no active flooding. Instead of returning $0 (which
         # makes the panel look broken), compute a SCENARIO-BASED potential
-        # exposure: "What if a minor flood (0.2m depth) occurred here?"
-        # This gives users useful vulnerability context for preparedness.
+        # exposure using GAR national average loss as a grounded baseline.
         is_scenario = False
+        gar_reference = None
         if flood_depth_m <= 0:
             flood_depth_m = 0.2  # minimum scenario depth (minor flood)
             is_scenario = True
@@ -218,6 +220,15 @@ class FinancialImpactEngine:
                 flood_area_km2 = min(total_area_km2 * 0.01, 10.0) if total_area_km2 > 0 else 5.0
             # Scale probability down for scenarios to produce conservative estimates
             flood_probability = max(flood_probability, 0.05)
+
+            # Use GAR Annual Average Loss as a grounded reference when available
+            try:
+                from processing.model_hub import get_gar_flood_loss
+                gar_data = get_gar_flood_loss(lat, lon)
+                if gar_data and gar_data.get("annual_avg_loss_usd", 0) > 0:
+                    gar_reference = gar_data
+            except Exception:
+                pass
 
         # ── Risk-level dampening ───────────────────────────────────────────────
         # When detection says LOW or MEDIUM risk and GloFAS shows no elevated
@@ -306,6 +317,40 @@ class FinancialImpactEngine:
             + result.indirect_costs_usd
             + result.displacement_cost_usd
         )
+
+        # ── GAR cross-check for scenario-based estimates ──
+        # If GAR reference is available, cap scenario estimates at a fraction of
+        # the national annual average loss scaled to local area. This prevents
+        # unrealistic scenario numbers that exceed established national baselines.
+        if gar_reference and is_scenario:
+            national_aal = gar_reference["annual_avg_loss_usd"]
+            # Scale national AAL to local area (rough: local_area / country_area)
+            # Typical country area: 500,000 km². Use 0.5% of national AAL as cap.
+            local_aal_cap = national_aal * max(total_area_km2, 100) / 500_000
+            local_aal_cap = max(local_aal_cap, national_aal * 0.001)  # at least 0.1%
+            if result.total_impact_usd > local_aal_cap * 2:
+                scale_factor = local_aal_cap * 2 / result.total_impact_usd
+                result.direct_damage_usd *= scale_factor
+                result.indirect_costs_usd *= scale_factor
+                result.displacement_cost_usd *= scale_factor
+                result.total_impact_usd = (
+                    result.direct_damage_usd
+                    + result.indirect_costs_usd
+                    + result.displacement_cost_usd
+                )
+                # Rescale breakdown
+                for k in result.breakdown:
+                    result.breakdown[k] = round(result.breakdown[k] * scale_factor, 0)
+                result.affected_population = int(result.affected_population * scale_factor)
+                logger.info(
+                    "GAR cap applied for %s: national AAL=$%.0f, local cap=$%.0f",
+                    region_name, national_aal, local_aal_cap * 2,
+                )
+            result.breakdown["gar_reference"] = {
+                "national_annual_avg_loss_usd": national_aal,
+                "source": gar_reference.get("source", "UNDRR GAR 2022"),
+                "country": gar_reference.get("country", "UNK"),
+            }
 
         # GDP impact
         if gdp_usd > 0:
