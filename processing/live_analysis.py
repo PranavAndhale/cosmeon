@@ -221,6 +221,8 @@ class LiveAnalysisEngine:
             elevation=elev_mean,
             low_elev_pct=low_elev_pct,
             month=datetime.utcnow().month,
+            lat=lat,
+            lon=lon,
         )
         logger.info(
             "  DETECTION: risk=%s, probability=%.3f, confidence=%.3f",
@@ -280,16 +282,22 @@ class LiveAnalysisEngine:
         elevation: float,
         low_elev_pct: float,
         month: int,
+        lat: float = 20.0,
+        lon: float = 0.0,
     ) -> tuple[str, float, float, dict]:
         """
         Multi-factor flood risk detection using live data.
 
-        Combines hydrological, meteorological, and terrain factors
+        Combines hydrological, meteorological, terrain, and return-period factors
         to produce a risk classification with probability and confidence.
 
         Returns:
             (risk_level, probability, confidence, contributing_factors)
         """
+        # Store lat/lon for hemisphere-aware seasonal detection & return-period lookup
+        self._current_lat = lat
+        self._current_lon = lon
+
         # Factor scores (0-1 scale each)
         scores = {}
 
@@ -361,18 +369,63 @@ class LiveAnalysisEngine:
             terrain_score = min(terrain_score + 0.2, 1.0)
         scores["terrain_vulnerability"] = terrain_score
 
-        # Factor 7: Seasonal risk
-        monsoon_months = {6: 0.8, 7: 1.0, 8: 1.0, 9: 0.7, 5: 0.4, 10: 0.4}
-        scores["seasonal_risk"] = monsoon_months.get(month, 0.1)
+        # Factor 7: Seasonal risk — hemisphere-aware
+        # Northern Hemisphere monsoon: Jun-Sep peak
+        # Southern Hemisphere: Dec-Mar peak (shifted by 6 months)
+        # Equatorial (|lat| < 10): bimodal — two wet seasons
+        nh_monsoon = {5: 0.4, 6: 0.8, 7: 1.0, 8: 1.0, 9: 0.7, 10: 0.4}
+        sh_monsoon = {11: 0.4, 12: 0.8, 1: 1.0, 2: 1.0, 3: 0.7, 4: 0.4}
+        eq_bimodal = {3: 0.7, 4: 0.8, 5: 0.6, 10: 0.7, 11: 0.8, 12: 0.6}
+
+        if hasattr(self, '_current_lat') and self._current_lat is not None:
+            _lat = self._current_lat
+        else:
+            _lat = 20.0  # NH default if no lat available
+
+        if abs(_lat) < 10:
+            scores["seasonal_risk"] = eq_bimodal.get(month, 0.2)
+        elif _lat < 0:
+            scores["seasonal_risk"] = sh_monsoon.get(month, 0.1)
+        else:
+            scores["seasonal_risk"] = nh_monsoon.get(month, 0.1)
+
+        # ── Factor 8: Return-period exceedance (GloFAS historical) ──
+        # This is the standard hydrological method used by ECMWF/GloFAS.
+        # Return-period exceeded → calibrated flood severity.
+        try:
+            from processing.model_hub import get_return_period_thresholds
+            rp_data = get_return_period_thresholds(self._current_lat,
+                                                    getattr(self, '_current_lon', 0))
+            if rp_data:
+                exceeded_rp = rp_data.get("exceeded_return_period", 0)
+                if exceeded_rp >= 50:
+                    scores["return_period"] = 1.0
+                elif exceeded_rp >= 20:
+                    scores["return_period"] = 0.90
+                elif exceeded_rp >= 10:
+                    scores["return_period"] = 0.75
+                elif exceeded_rp >= 5:
+                    scores["return_period"] = 0.55
+                elif exceeded_rp >= 2:
+                    scores["return_period"] = 0.35
+                else:
+                    scores["return_period"] = max(0.02, rp_data.get("exceedance_probability", 0.0))
+            else:
+                scores["return_period"] = scores.get("discharge_anomaly", 0.1)
+        except Exception:
+            scores["return_period"] = scores.get("discharge_anomaly", 0.1)
 
         # ── Weighted composite score ──
+        # Return period is the PRIMARY signal (established hydrology),
+        # discharge anomaly + ratio are secondary confirmations.
         weights = {
-            "discharge_anomaly": 0.30,
-            "discharge_ratio": 0.20,
-            "rainfall_7d": 0.15,
-            "max_daily_rain": 0.10,
-            "rainfall_forecast": 0.10,
-            "terrain_vulnerability": 0.10,
+            "return_period": 0.25,
+            "discharge_anomaly": 0.20,
+            "discharge_ratio": 0.15,
+            "rainfall_7d": 0.12,
+            "max_daily_rain": 0.08,
+            "rainfall_forecast": 0.08,
+            "terrain_vulnerability": 0.07,
             "seasonal_risk": 0.05,
         }
 

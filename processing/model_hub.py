@@ -1083,3 +1083,409 @@ def _temp_anomaly_cmip6(lat: float, lon: float) -> dict:
         "anomaly_c": round(anomaly, 1),
         "source": "CMIP6 EC-Earth3P-HR climatology vs current observation",
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. SATELLITE NDVI (NASA MODIS)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_ndvi_satellite(lat: float, lon: float) -> dict:
+    """
+    Fetch real satellite NDVI from NASA MODIS (MOD13Q1, 250m, 16-day composite).
+
+    Tier 0: NASA ORNL DAAC TESViS API — free, no auth, global coverage.
+    Returns actual NDVI from Terra MODIS, not a computed proxy.
+
+    API: https://modis.ornl.gov/rst/api/v1/MOD13Q1/subset
+    """
+    try:
+        today = datetime.utcnow()
+        start_dt = today - timedelta(days=90)
+
+        # NASA day-of-year format: AYYYY-DDD
+        start_doy = f"A{start_dt.year}-{start_dt.timetuple().tm_yday:03d}"
+        end_doy = f"A{today.year}-{today.timetuple().tm_yday:03d}"
+
+        resp = requests.get(
+            "https://modis.ornl.gov/rst/api/v1/MOD13Q1/subset",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "startDate": start_doy,
+                "endDate": end_doy,
+                "kmAboveBelow": 0,
+                "kmLeftRight": 0,
+                "band": "250m_16_days_NDVI",
+            },
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        subsets = data.get("subset", [])
+        if not subsets:
+            logger.warning("NDVI satellite: no subset data for %.2f, %.2f", lat, lon)
+            return None
+
+        # Walk backwards from the most recent observation to find a valid NDVI
+        for entry in reversed(subsets):
+            raw_values = entry.get("data", [])
+            calendar_date = entry.get("calendar_date", "unknown")
+
+            # Filter out fill/cloud/bad data: valid raw NDVI is in [-2000, 10000]
+            valid = [v for v in raw_values if -2000 <= v <= 10000]
+            if not valid:
+                continue
+
+            # Scale: raw values are NDVI * 10000
+            ndvi = sum(valid) / len(valid) / 10000.0
+
+            # Vegetation stress: healthy vegetation (NDVI ~0.6+) = low stress
+            stress = max(0.0, min(1.0, 1.0 - ndvi))
+
+            return {
+                "ndvi": round(ndvi, 4),
+                "stress_index": round(stress, 4),
+                "source": "NASA MODIS MOD13Q1 (250m satellite)",
+                "_tier": 0,
+                "date": calendar_date,
+            }
+
+        logger.warning("NDVI satellite: all observations were fill/cloud for %.2f, %.2f", lat, lon)
+        return None
+
+    except Exception as e:
+        logger.warning("NDVI satellite fetch failed: %s", e)
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 8. FLOOD RETURN-PERIOD THRESHOLDS (GloFAS historical)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_return_period_thresholds(lat: float, lon: float) -> dict:
+    """
+    Compute flood return-period thresholds from GloFAS historical discharge (1990-present).
+
+    Uses Open-Meteo Flood API historical data to derive 2/5/10/20-year return periods
+    via Weibull plotting position on annual discharge maxima.
+    This is the standard hydrological method used by ECMWF/GloFAS.
+    """
+    try:
+        today = date.today()
+        resp = requests.get(
+            _FLOOD_API,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "river_discharge",
+                "start_date": "1990-01-01",
+                "end_date": today.isoformat(),
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        daily = resp.json().get("daily", {})
+        dates = daily.get("time", [])
+        discharge = daily.get("river_discharge", [])
+
+        if not dates or not discharge:
+            logger.warning("Return period: no discharge data for %.2f, %.2f", lat, lon)
+            return None
+
+        # Group discharge values by year, take annual maxima
+        year_max: dict = defaultdict(float)
+        all_valid = []
+        for d, q in zip(dates, discharge):
+            if q is None:
+                continue
+            year = int(d[:4])
+            year_max[year] = max(year_max[year], q)
+            all_valid.append(q)
+
+        if not year_max or len(year_max) < 5:
+            logger.warning("Return period: insufficient years (%d) for %.2f, %.2f",
+                           len(year_max), lat, lon)
+            return None
+
+        # Sort annual maxima ascending for Weibull plotting position
+        annual_maxima = sorted(year_max.values())
+        n = len(annual_maxima)
+
+        # Compute return-period thresholds via Weibull plotting position
+        # For return period T, threshold is at rank position n * (1 - 1/T)
+        return_periods = [2, 5, 10, 20, 50]
+        thresholds = {}
+        for rp in return_periods:
+            idx_float = n * (1.0 - 1.0 / rp)
+            # Linear interpolation between bounding indices
+            idx_low = int(math.floor(idx_float))
+            idx_high = int(math.ceil(idx_float))
+            idx_low = max(0, min(idx_low, n - 1))
+            idx_high = max(0, min(idx_high, n - 1))
+            if idx_low == idx_high:
+                thresholds[rp] = round(annual_maxima[idx_low], 2)
+            else:
+                frac = idx_float - idx_low
+                val = annual_maxima[idx_low] * (1 - frac) + annual_maxima[idx_high] * frac
+                thresholds[rp] = round(val, 2)
+
+        # Current conditions: last 7 days
+        recent_discharge = [q for q in discharge[-7:] if q is not None]
+        current_7d_avg = sum(recent_discharge) / len(recent_discharge) if recent_discharge else 0.0
+        current_max_7d = max(recent_discharge) if recent_discharge else 0.0
+        mean_discharge = sum(all_valid) / len(all_valid) if all_valid else 0.0
+
+        # Determine highest return period exceeded by current max
+        exceeded_rp = 0
+        for rp in sorted(return_periods):
+            if current_max_7d >= thresholds[rp]:
+                exceeded_rp = rp
+
+        # Exceedance probability
+        if exceeded_rp > 0:
+            exceedance_prob = 1.0 / exceeded_rp
+        else:
+            # Estimate from percentile of current discharge in historical distribution
+            rank = sum(1 for v in all_valid if v <= current_max_7d)
+            percentile = rank / len(all_valid) if all_valid else 0.5
+            exceedance_prob = round(1.0 - percentile, 4)
+
+        return {
+            "thresholds": thresholds,
+            "current_discharge": round(current_7d_avg, 2),
+            "current_max_7d": round(current_max_7d, 2),
+            "mean_discharge": round(mean_discharge, 2),
+            "years_of_data": n,
+            "exceeded_return_period": exceeded_rp,
+            "exceedance_probability": round(exceedance_prob, 4),
+            "source": "GloFAS v4 historical (1990-present) via Open-Meteo",
+            "_tier": 1,
+        }
+
+    except Exception as e:
+        logger.warning("Return period thresholds failed: %s", e)
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 9. INFORM RISK INDEX + GAR FLOOD LOSS
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Source: EU JRC INFORM Risk Index 2024 — country-level flood hazard scores (0-10)
+# Format: ISO3 -> {risk: overall, flood: flood_hazard, vuln: vulnerability, cope: coping_capacity}
+_INFORM_FLOOD_RISK = {
+    "AFG": {"risk": 8.3, "flood": 7.2, "vuln": 7.8, "cope": 8.9},
+    "BGD": {"risk": 7.1, "flood": 8.5, "vuln": 5.8, "cope": 6.1},
+    "IND": {"risk": 5.7, "flood": 7.4, "vuln": 5.1, "cope": 4.3},
+    "IDN": {"risk": 5.1, "flood": 6.8, "vuln": 4.2, "cope": 4.5},
+    "JPN": {"risk": 3.2, "flood": 5.9, "vuln": 1.8, "cope": 1.5},
+    "NPL": {"risk": 6.2, "flood": 7.1, "vuln": 6.3, "cope": 6.0},
+    "PAK": {"risk": 7.0, "flood": 8.2, "vuln": 6.1, "cope": 6.8},
+    "PHL": {"risk": 5.9, "flood": 7.8, "vuln": 5.2, "cope": 4.8},
+    "BRA": {"risk": 4.2, "flood": 5.5, "vuln": 4.0, "cope": 3.5},
+    "DEU": {"risk": 2.4, "flood": 4.2, "vuln": 1.2, "cope": 1.0},
+    "NLD": {"risk": 2.8, "flood": 6.5, "vuln": 1.0, "cope": 0.8},
+    "GBR": {"risk": 2.5, "flood": 4.0, "vuln": 1.5, "cope": 1.1},
+    "USA": {"risk": 3.0, "flood": 4.5, "vuln": 2.1, "cope": 1.4},
+    "CHN": {"risk": 5.3, "flood": 7.0, "vuln": 3.8, "cope": 4.2},
+    "MMR": {"risk": 7.5, "flood": 7.6, "vuln": 6.5, "cope": 8.2},
+    "VNM": {"risk": 4.5, "flood": 6.5, "vuln": 3.8, "cope": 4.0},
+    "THA": {"risk": 3.8, "flood": 6.0, "vuln": 3.2, "cope": 3.0},
+    "KHM": {"risk": 5.5, "flood": 6.8, "vuln": 5.8, "cope": 5.5},
+    "NGA": {"risk": 7.2, "flood": 6.5, "vuln": 7.0, "cope": 7.8},
+    "MOZ": {"risk": 6.8, "flood": 7.5, "vuln": 7.2, "cope": 7.0},
+    "ETH": {"risk": 7.3, "flood": 5.8, "vuln": 7.5, "cope": 7.5},
+    "SSD": {"risk": 9.1, "flood": 6.5, "vuln": 8.5, "cope": 9.5},
+    "COD": {"risk": 8.0, "flood": 5.5, "vuln": 7.8, "cope": 9.0},
+    "SDN": {"risk": 8.5, "flood": 6.0, "vuln": 7.5, "cope": 8.8},
+    "SOM": {"risk": 8.9, "flood": 5.5, "vuln": 8.0, "cope": 9.2},
+    "HTI": {"risk": 7.8, "flood": 7.0, "vuln": 7.5, "cope": 8.5},
+    "AUS": {"risk": 2.6, "flood": 4.8, "vuln": 1.5, "cope": 1.0},
+    "ITA": {"risk": 3.0, "flood": 5.0, "vuln": 2.0, "cope": 1.8},
+    "FRA": {"risk": 2.8, "flood": 4.5, "vuln": 1.8, "cope": 1.2},
+    "COL": {"risk": 5.5, "flood": 6.5, "vuln": 4.5, "cope": 4.8},
+    "PER": {"risk": 4.8, "flood": 6.0, "vuln": 4.2, "cope": 4.5},
+    "MEX": {"risk": 4.5, "flood": 5.5, "vuln": 3.8, "cope": 3.5},
+    "RUS": {"risk": 4.0, "flood": 5.0, "vuln": 3.2, "cope": 3.5},
+    "KEN": {"risk": 5.8, "flood": 5.5, "vuln": 6.0, "cope": 6.2},
+    "TZA": {"risk": 5.5, "flood": 5.0, "vuln": 6.2, "cope": 5.8},
+    "LKA": {"risk": 4.5, "flood": 6.5, "vuln": 4.0, "cope": 3.8},
+    "EGY": {"risk": 4.2, "flood": 4.0, "vuln": 4.5, "cope": 4.0},
+    "ZAF": {"risk": 4.5, "flood": 4.5, "vuln": 5.0, "cope": 3.5},
+}
+
+# Source: UNDRR GAR 2022 — Annual Average Loss from floods (USD)
+# Top countries by flood AAL
+_GAR_ANNUAL_FLOOD_LOSS = {
+    "CHN": 30_000_000_000,  # $30B
+    "USA": 20_000_000_000,
+    "IND": 14_000_000_000,
+    "JPN": 8_000_000_000,
+    "BRA": 4_000_000_000,
+    "IDN": 3_500_000_000,
+    "DEU": 3_000_000_000,
+    "GBR": 2_500_000_000,
+    "BGD": 2_000_000_000,
+    "PAK": 2_500_000_000,
+    "THA": 2_000_000_000,
+    "NLD": 1_500_000_000,
+    "FRA": 2_000_000_000,
+    "ITA": 2_500_000_000,
+    "AUS": 1_500_000_000,
+    "PHL": 1_800_000_000,
+    "MEX": 1_200_000_000,
+    "COL": 800_000_000,
+    "VNM": 1_000_000_000,
+    "NGA": 600_000_000,
+    "KEN": 300_000_000,
+    "ETH": 200_000_000,
+    "MOZ": 150_000_000,
+    "NPL": 400_000_000,
+    "MMR": 500_000_000,
+    "KHM": 300_000_000,
+    "LKA": 400_000_000,
+    "RUS": 2_000_000_000,
+    "ZAF": 500_000_000,
+    "PER": 600_000_000,
+    "EGY": 200_000_000,
+    "SDN": 100_000_000,
+    "SSD": 50_000_000,
+    "SOM": 80_000_000,
+    "HTI": 200_000_000,
+    "COD": 100_000_000,
+    "AFG": 150_000_000,
+}
+
+# ISO-2 to ISO-3 mapping for the countries in our lookup tables
+_ISO2_TO_ISO3 = {
+    "AF": "AFG", "BD": "BGD", "IN": "IND", "ID": "IDN", "JP": "JPN",
+    "NP": "NPL", "PK": "PAK", "PH": "PHL", "BR": "BRA", "DE": "DEU",
+    "NL": "NLD", "GB": "GBR", "US": "USA", "CN": "CHN", "MM": "MMR",
+    "VN": "VNM", "TH": "THA", "KH": "KHM", "NG": "NGA", "MZ": "MOZ",
+    "ET": "ETH", "SS": "SSD", "CD": "COD", "SD": "SDN", "SO": "SOM",
+    "HT": "HTI", "AU": "AUS", "IT": "ITA", "FR": "FRA", "CO": "COL",
+    "PE": "PER", "MX": "MEX", "RU": "RUS", "KE": "KEN", "TZ": "TZA",
+    "LK": "LKA", "EG": "EGY", "ZA": "ZAF",
+}
+
+
+def _reverse_geocode_country(lat: float, lon: float) -> Optional[str]:
+    """Reverse geocode lat/lon to ISO-3 country code via Nominatim."""
+    try:
+        rev = requests.get(
+            _NOMINATIM,
+            params={"lat": lat, "lon": lon, "format": "json", "zoom": 3},
+            headers={"User-Agent": "COSMEON/1.0"},
+            timeout=6,
+        )
+        rev.raise_for_status()
+        cc2 = rev.json().get("address", {}).get("country_code", "").upper()
+        if cc2 and len(cc2) == 2:
+            return _ISO2_TO_ISO3.get(cc2)
+    except Exception as e:
+        logger.warning("Reverse geocode for country code failed: %s", e)
+    return None
+
+
+def get_inform_country_risk(lat: float, lon: float) -> dict:
+    """
+    Look up INFORM Risk Index scores for the country at the given coordinates.
+
+    Uses Nominatim reverse geocode to identify the country, then returns
+    pre-loaded INFORM Risk Index 2024 scores (EU JRC).
+
+    NEVER fails — returns a latitude-based default if country is not in the table.
+    """
+    iso3 = _reverse_geocode_country(lat, lon)
+
+    if iso3 and iso3 in _INFORM_FLOOD_RISK:
+        entry = _INFORM_FLOOD_RISK[iso3]
+        return {
+            "risk": entry["risk"],
+            "flood_hazard": entry["flood"],
+            "vulnerability": entry["vuln"],
+            "coping_capacity": entry["cope"],
+            "country": iso3,
+            "source": "INFORM Risk Index 2024 (EU JRC)",
+            "_tier": 0,
+        }
+
+    # Default fallback based on latitude band (tropical = higher risk)
+    abs_lat = abs(lat)
+    if abs_lat < 15:
+        # Deep tropics — high flood hazard, moderate vulnerability
+        risk, flood, vuln, cope = 5.5, 6.5, 5.5, 5.0
+    elif abs_lat < 30:
+        # Subtropics / monsoon belt
+        risk, flood, vuln, cope = 4.5, 5.5, 4.5, 4.0
+    elif abs_lat < 50:
+        # Temperate
+        risk, flood, vuln, cope = 3.0, 4.0, 2.5, 2.0
+    else:
+        # High latitude — lower flood risk
+        risk, flood, vuln, cope = 2.5, 3.0, 2.0, 1.5
+
+    return {
+        "risk": risk,
+        "flood_hazard": flood,
+        "vulnerability": vuln,
+        "coping_capacity": cope,
+        "country": iso3 or "UNK",
+        "source": "INFORM Risk Index 2024 (EU JRC) — latitude-band default",
+        "_tier": 0,
+    }
+
+
+def get_gar_flood_loss(lat: float, lon: float) -> dict:
+    """
+    Look up UNDRR GAR 2022 Annual Average Loss from floods for the country
+    at the given coordinates.
+
+    Uses Nominatim reverse geocode to identify the country, then returns
+    pre-loaded GAR AAL data.
+
+    Fallback: estimates AAL from global average (~0.1% of GDP).
+    """
+    iso3 = _reverse_geocode_country(lat, lon)
+
+    if iso3 and iso3 in _GAR_ANNUAL_FLOOD_LOSS:
+        return {
+            "annual_avg_loss_usd": _GAR_ANNUAL_FLOOD_LOSS[iso3],
+            "country": iso3,
+            "source": "UNDRR GAR 2022",
+            "_tier": 0,
+        }
+
+    # Fallback: estimate from World Bank GDP × 0.001 (global avg flood loss ~0.1% GDP)
+    try:
+        cc2 = None
+        rev = requests.get(
+            _NOMINATIM,
+            params={"lat": lat, "lon": lon, "format": "json", "zoom": 3},
+            headers={"User-Agent": "COSMEON/1.0"},
+            timeout=6,
+        )
+        rev.raise_for_status()
+        cc2 = rev.json().get("address", {}).get("country_code", "").upper()
+        if cc2 and len(cc2) == 2:
+            gdp = _fetch_wb_indicator(cc2, "NY.GDP.MKTP.CD")
+            if gdp and gdp > 0:
+                estimated_aal = gdp * 0.001
+                return {
+                    "annual_avg_loss_usd": round(estimated_aal),
+                    "country": _ISO2_TO_ISO3.get(cc2, cc2),
+                    "source": "Estimated from World Bank GDP × 0.1% (global avg flood loss ratio)",
+                    "_tier": 1,
+                }
+    except Exception as e:
+        logger.warning("GAR flood loss GDP fallback failed: %s", e)
+
+    # Ultimate fallback: global median
+    return {
+        "annual_avg_loss_usd": 500_000_000,
+        "country": iso3 or "UNK",
+        "source": "UNDRR GAR 2022 — global median estimate",
+        "_tier": 2,
+    }

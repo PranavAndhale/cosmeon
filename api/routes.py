@@ -1517,6 +1517,8 @@ def get_compound_risk(region_id: int):
             region_name=region.name,
             pop_density=pop_density,
             gdp_usd=gdp_usd,
+            lat=lat,
+            lon=lon,
         )
         d = result.to_dict()
         d["data_sources"] = {
@@ -1587,6 +1589,8 @@ def compound_risk_location(body: LocationRequest):
             region_name=name,
             pop_density=pop_density,
             gdp_usd=gdp_usd,
+            lat=lat,
+            lon=lon,
         )
         d = result.to_dict()
         d["data_sources"] = {
@@ -1701,6 +1705,8 @@ def get_financial_impact(region_id: int):
             region_name=region.name,
             gdp_usd=econ.get("gdp_usd", 0),
             discharge_anomaly=discharge_data.get("anomaly_sigma", 0.0),
+            lat=lat,
+            lon=lon,
         )
         return result.to_dict()
     except Exception as e:
@@ -1751,6 +1757,8 @@ def financial_impact_location(body: LocationRequest):
             region_name=name,
             gdp_usd=gdp_usd,
             discharge_anomaly=discharge_anomaly,
+            lat=lat,
+            lon=lon,
         )
         d = result.to_dict()
 

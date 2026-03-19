@@ -93,6 +93,8 @@ class CompoundRiskEngine:
         region_name: str = "Unknown",
         pop_density: float = 500.0,
         gdp_usd: float = 50e9,
+        lat: float = 0.0,
+        lon: float = 0.0,
     ) -> CompoundRiskResult:
         """
         Compute INFORM-based compound risk from multiple hazard layers.
@@ -267,6 +269,26 @@ class CompoundRiskEngine:
         if layers:
             dominant = max(layers, key=lambda h: h.severity)
             result.dominant_hazard = dominant.name
+
+        # ── INFORM Country-Level Calibration ──────────────────────────────────
+        # Compare our computed score against the published INFORM Risk Index
+        # for this country. If they diverge >30%, log a calibration warning.
+        inform_ref = None
+        try:
+            from processing.model_hub import get_inform_country_risk
+            inform_ref = get_inform_country_risk(lat, lon)
+        except Exception:
+            pass
+
+        if inform_ref:
+            # INFORM score is 0-10, normalize to 0-1 for comparison
+            inform_norm = inform_ref.get("risk", 5.0) / 10.0
+            deviation = abs(result.compound_score - inform_norm) / max(inform_norm, 0.01)
+            if deviation > 0.30:
+                logger.warning(
+                    "INFORM calibration: %s computed=%.2f vs INFORM=%.2f (%.0f%% deviation)",
+                    region_name, result.compound_score, inform_norm, deviation * 100,
+                )
 
         result.recommendations = self._generate_recommendations(result)
 

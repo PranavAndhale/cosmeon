@@ -1,11 +1,11 @@
 """
-Phase 2A: Multi-Sensor Data Fusion Engine.
+Multi-Source Data Fusion Engine.
 
-Fuses data from multiple satellite and weather sources:
-  - Optical (Sentinel-2, Landsat): Vegetation health, surface water
-  - SAR (Sentinel-1): Flood detection through clouds
-  - Thermal (MODIS/Landsat): Heat stress indicators
-  - Weather (Open-Meteo): Precipitation, temperature, soil moisture
+Fuses data from established satellite and weather sources:
+  - Optical: NASA MODIS MOD13Q1 satellite NDVI (250m, real), with proxy fallback
+  - Radar (model): Statistical SAR-like estimate (NOT real Sentinel-1 satellite data)
+  - Thermal: ERA5 reanalysis temperature anomaly (via model_hub), Open-Meteo fallback
+  - Weather (Open-Meteo): Precipitation, temperature, soil moisture (0-7cm)
 """
 import logging
 from dataclasses import dataclass, field
@@ -81,17 +81,38 @@ class DataFusionEngine:
         """
         layers = []
 
-        # 1. Optical layer (Sentinel-2 proxy via existing analysis)
-        optical = SensorLayer(
-            source="sentinel-2",
-            data_type="optical",
-            quality_score=max(0.1, 1.0 - cloud_cover_pct),
-            timestamp=datetime.utcnow().isoformat(),
-            values={
-                "surface_water_pct": existing_flood_pct,
-                "ndvi_proxy": max(0.0, 0.7 - existing_flood_pct * 2),
-            }
-        )
+        # 1. Optical layer — Real MODIS NDVI when available, proxy fallback
+        try:
+            from processing.model_hub import get_ndvi_satellite
+            modis = get_ndvi_satellite(lat, lon)
+            if modis and modis.get("ndvi") is not None:
+                ndvi_value = modis["ndvi"]
+                optical = SensorLayer(
+                    source="modis-ndvi-satellite",
+                    data_type="optical",
+                    quality_score=0.90,  # real satellite data
+                    timestamp=modis.get("date", datetime.utcnow().isoformat()),
+                    values={
+                        "surface_water_pct": existing_flood_pct,
+                        "ndvi": round(ndvi_value, 3),
+                        "ndvi_source": "NASA MODIS MOD13Q1 (250m satellite)",
+                    }
+                )
+            else:
+                raise ValueError("MODIS unavailable")
+        except Exception:
+            # Fallback: proxy NDVI
+            optical = SensorLayer(
+                source="sentinel-2-proxy",
+                data_type="optical",
+                quality_score=max(0.1, 1.0 - cloud_cover_pct) * 0.5,  # halved quality for proxy
+                timestamp=datetime.utcnow().isoformat(),
+                values={
+                    "surface_water_pct": existing_flood_pct,
+                    "ndvi": max(0.0, 0.7 - existing_flood_pct * 2),
+                    "ndvi_source": "proxy estimate (not satellite)",
+                }
+            )
         layers.append(optical)
 
         # 2. SAR layer (Sentinel-1 proxy — works through clouds)
@@ -122,18 +143,24 @@ class DataFusionEngine:
         flood_pct: float, cloud_cover: float
     ) -> SensorLayer:
         """
-        Simulate SAR (Sentinel-1) backscatter analysis.
-        SAR penetrates clouds, so quality is independent of cloud cover.
+        Modeled SAR-like backscatter estimate (NOT real Sentinel-1 satellite data).
+
+        This produces a statistical estimate seeded by lat/lon, not actual
+        synthetic-aperture radar imagery.  The quality_score is set to 0.50
+        to reflect that this is a model-derived proxy, not a genuine SAR
+        observation.  Real SAR integration would require access to
+        Copernicus Sentinel-1 GRD products via the Copernicus Data Space
+        Ecosystem API.
         """
-        # SAR flood detection: water has low backscatter
+        # Modeled estimate — deterministic noise from lat/lon, NOT satellite SAR
         np.random.seed(int(abs(lat * 100 + lon * 100)) % 2**31)
         noise = np.random.normal(0, 0.05)
         sar_water_pct = max(0, flood_pct + noise * 0.3)
 
         return SensorLayer(
-            source="sentinel-1-sar",
+            source="sar-model-estimate",
             data_type="sar",
-            quality_score=0.95,  # SAR always high quality (cloud-independent)
+            quality_score=0.50,  # modeled proxy, not real satellite SAR
             timestamp=datetime.utcnow().isoformat(),
             values={
                 "backscatter_water_pct": sar_water_pct,
@@ -143,7 +170,28 @@ class DataFusionEngine:
         )
 
     def _fetch_thermal_proxy(self, lat: float, lon: float) -> SensorLayer:
-        """Fetch thermal/temperature data as MODIS proxy."""
+        """Fetch thermal/temperature data, preferring ERA5 climatological baseline."""
+        # Try ERA5 climatological baseline from model_hub first
+        try:
+            from processing.model_hub import get_temperature_anomaly
+            era5 = get_temperature_anomaly(lat, lon)
+            if era5 and era5.get("anomaly") is not None:
+                return SensorLayer(
+                    source="era5-thermal",
+                    data_type="thermal",
+                    quality_score=0.90,
+                    timestamp=era5.get("date", datetime.utcnow().isoformat()),
+                    values={
+                        "avg_temp_max": round(era5.get("temp_max", 25.0), 1),
+                        "avg_temp_min": round(era5.get("temp_min", 15.0), 1),
+                        "thermal_anomaly_c": round(era5["anomaly"], 1),
+                        "heat_stress": era5["anomaly"] > 5,
+                    }
+                )
+        except Exception as e:
+            logger.debug("ERA5 thermal baseline unavailable, falling back to Open-Meteo: %s", e)
+
+        # Fallback: Open-Meteo with location-aware baseline
         try:
             params = {
                 "latitude": lat, "longitude": lon,
@@ -159,9 +207,9 @@ class DataFusionEngine:
             avg_max = sum(temps_max) / max(len(temps_max), 1) if temps_max else 25.0
             avg_min = sum(temps_min) / max(len(temps_min), 1) if temps_min else 15.0
 
-            # Thermal anomaly: deviation from typical range
-            expected_avg = 22.0  # global baseline
-            thermal_anomaly = avg_max - expected_avg
+            # Location-aware baseline: warmer near tropics, cooler at high latitudes
+            baseline = 25 - abs(lat - 23.5) * 0.3
+            thermal_anomaly = avg_max - baseline
 
             return SensorLayer(
                 source="modis-thermal",
@@ -184,7 +232,7 @@ class DataFusionEngine:
         try:
             params = {
                 "latitude": lat, "longitude": lon,
-                "hourly": "soil_moisture_0_to_1cm",
+                "hourly": "soil_moisture_0_to_7cm",
                 "daily": "precipitation_sum",
                 "past_days": 7, "forecast_days": 1,
             }
@@ -197,7 +245,7 @@ class DataFusionEngine:
             total_precip = sum(p for p in precip if p is not None)
 
             hourly = data.get("hourly", {})
-            soil = hourly.get("soil_moisture_0_to_1cm", [])
+            soil = hourly.get("soil_moisture_0_to_7cm", [])
             avg_soil = sum(s for s in soil if s is not None) / max(len([s for s in soil if s is not None]), 1) if soil else 0.3
 
             return SensorLayer(
@@ -247,8 +295,8 @@ class DataFusionEngine:
             vals = layer.values
             if layer.data_type == "optical":
                 flood_signals.append((vals.get("surface_water_pct", 0), w))
-                ndvi = vals.get("ndvi_proxy", 0.7)
-                result.vegetation_stress = max(result.vegetation_stress, 1 - ndvi)
+                ndvi = vals.get("ndvi", 0.7)
+                result.vegetation_stress = max(result.vegetation_stress, max(0.0, 1.0 - ndvi))
 
             elif layer.data_type == "sar":
                 flood_signals.append((vals.get("backscatter_water_pct", 0), w))
