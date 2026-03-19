@@ -1462,37 +1462,72 @@ def _get_compound():
 
 @app.get("/api/compound-risk/{region_id}")
 def get_compound_risk(region_id: int):
-    """Compute compound multi-hazard risk for a region using INFORM Risk methodology."""
+    """
+    Compute compound multi-hazard risk for a region using INFORM Risk methodology.
+
+    All inputs from established tiered sources (same as ad-hoc location):
+      - Soil saturation:    ERA5 → ECMWF IFS 0.25° → ERA5 climatology
+      - Vegetation stress:  FAO-56 ET0 best_match → ECMWF IFS → ERA5 archive
+      - Thermal anomaly:    ERA5 climatology → CMIP6 EC-Earth3P-HR
+      - Flood probability:  Live detection (GloFAS v4 + Open-Meteo)
+      - Population/GDP:     World Bank country → regional → global
+    """
     try:
-        from processing.model_hub import get_economic_data
+        from processing.model_hub import (
+            get_soil_moisture, get_vegetation_stress,
+            get_temperature_anomaly, get_economic_data,
+        )
         region = db.get_region(region_id)
         if not region:
             return {"error": f"Region {region_id} not found"}
         bbox = region.bbox
         lat, lon = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
-        # Get fusion data for compound risk inputs
-        fusion = _get_fusion().fuse_sensors(lat, lon, region.name)
-        risk = db.get_latest_risk(region_id)
+
+        # Live flood detection — always use real-time signal, not stale DB
+        detection = analysis_engine.analyze_by_coords(lat, lon, region.name)
+        flood_prob = detection.flood_probability
+        confidence = detection.confidence_score
+
         # Fetch LIVE rainfall and elevation
         from processing.external_data import ExternalDataIntegrator
         ext = ExternalDataIntegrator()
         rainfall = ext.fetch_rainfall(lat, lon, days=7)
         elevation = ext.fetch_elevation(lat, lon)
-        # World Bank economic data for INFORM exposure dimension
-        econ = get_economic_data(lat, lon, region.name)
+
+        # ── Tiered inputs via model hub (matches ad-hoc location) ──
+        sm_data   = get_soil_moisture(lat, lon)
+        veg_data  = get_vegetation_stress(lat, lon)
+        temp_data = get_temperature_anomaly(lat, lon)
+        econ_data = get_economic_data(lat, lon, region.name)
+
+        soil_saturation   = sm_data["saturation_fraction"]
+        vegetation_stress = veg_data["stress_index"]
+        thermal_anomaly   = temp_data["anomaly_c"]
+        pop_density       = econ_data.get("pop_density_km2", 500.0)
+        gdp_usd           = econ_data.get("gdp_usd", 50e9)
+
         result = _get_compound().compute_compound_risk(
-            flood_probability=risk.flood_percentage if risk else 0.0,
-            flood_confidence=risk.confidence_score if risk else 0.0,
-            vegetation_stress=fusion.vegetation_stress,
-            thermal_anomaly=fusion.thermal_anomaly,
-            soil_saturation=fusion.soil_saturation,
+            flood_probability=flood_prob,
+            flood_confidence=confidence,
+            vegetation_stress=vegetation_stress,
+            thermal_anomaly=thermal_anomaly,
+            soil_saturation=soil_saturation,
             rainfall_7d_mm=rainfall.get("total_rainfall_mm", 0),
             elevation_m=elevation.get("mean_elevation_m", 100),
             region_name=region.name,
-            pop_density=econ.get("pop_density_km2", 500.0),
-            gdp_usd=econ.get("gdp_usd", 50e9),
+            pop_density=pop_density,
+            gdp_usd=gdp_usd,
         )
-        return result.to_dict()
+        d = result.to_dict()
+        d["data_sources"] = {
+            "soil_saturation":    f"{sm_data['source']} (tier {sm_data['_tier']})",
+            "vegetation_stress":  f"{veg_data['source']} (tier {veg_data['_tier']})",
+            "thermal_anomaly":    f"{temp_data['source']} (tier {temp_data['_tier']})",
+            "economic":           f"{econ_data['source']} (tier {econ_data['_tier']})",
+            "flood_probability":  "Live detection (GloFAS v4 + Open-Meteo)",
+            "methodology":        "INFORM Risk Index (EU JRC)",
+        }
+        return d
     except Exception as e:
         logger.exception("Compound risk failed for region %s", region_id)
         return {"error": str(e)}

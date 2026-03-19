@@ -105,9 +105,14 @@ class CompoundRiskEngine:
         result = CompoundRiskResult(timestamp=datetime.utcnow().isoformat())
 
         # ── HAZARD DIMENSION (0–10) ──────────────────────────────────────────
-        # Flood hazard: from GloFAS return period classification
-        flood_sev = max(flood_probability, flood_confidence)
-        flood_hazard_10 = min(10.0, flood_sev * 10.0)
+        # Flood hazard: from GloFAS/live detection flood probability
+        # Note: flood_confidence measures DETECTION certainty (1.0 = confident),
+        # NOT flood severity. Only flood_probability drives the hazard score.
+        # Confidence is used to weight the signal reliability (high confidence
+        # means we trust the probability more).
+        flood_sev = flood_probability
+        confidence_weight = max(0.5, min(1.0, flood_confidence))  # reliable detection → trust the probability
+        flood_hazard_10 = min(10.0, flood_sev * 10.0 * confidence_weight)
 
         # Precipitation hazard: based on 7-day rainfall intensity
         # ERA5 climatological thresholds: >100mm/week = severe, >50mm = moderate
@@ -205,7 +210,7 @@ class CompoundRiskEngine:
             description=f"Soil moisture: {soil_saturation:.0%} (ERA5 reanalysis)",
         ))
 
-        elev_sev = max(0.0, 1.0 - elevation_m / 200.0) if elevation_m < 200 else 0.0
+        elev_sev = min(1.0, max(0.0, 1.0 - elevation_m / 200.0)) if elevation_m < 200 else 0.0
         layers.append(HazardLayer(
             name="elevation_risk",
             severity=elev_sev,
