@@ -220,13 +220,18 @@ def predict_risk(region_id: int):
     history = db.get_risk_history(region_id, limit=10)
     history_dicts = [r.to_dict() for r in history]
 
-    # Get external factors
+    # Get external factors + add lat/lon for model_hub enrichment
     factors = external.get_risk_factors(region.bbox)
+    factors_dict = factors.to_dict()
+    lat = (region.bbox[1] + region.bbox[3]) / 2
+    lon = (region.bbox[0] + region.bbox[2]) / 2
+    factors_dict["_lat"] = lat
+    factors_dict["_lon"] = lon
 
     # Run prediction
     prediction = predictor.predict(
         flood_history=history_dicts,
-        external_factors=factors.to_dict(),
+        external_factors=factors_dict,
         region_name=region.name,
     )
 
@@ -245,13 +250,16 @@ def explain_location(lat: float = Query(...), lon: float = Query(...)):
 
     name = f"{lat:.2f}, {lon:.2f}"
 
-    # 1. Get external factors for these coords
+    # 1. Get external factors for these coords + add lat/lon for enrichment
     factors = external.get_risk_factors_by_coords(lat, lon)
+    factors_dict = factors.to_dict()
+    factors_dict["_lat"] = lat
+    factors_dict["_lon"] = lon
 
     # 2. Run ML prediction with full explanation (no history for ad-hoc)
     ml_result = predictor.explain_prediction(
         flood_history=[],
-        external_factors=factors.to_dict(),
+        external_factors=factors_dict,
         region_name=name,
     )
 
@@ -342,8 +350,13 @@ def explain_prediction(region_id: int):
     if not region:
         raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
 
-    # 1. Get external factors (weather + terrain — NO discharge)
+    # 1. Get external factors (weather + terrain — NO discharge) + lat/lon for enrichment
     factors = external.get_risk_factors(region.bbox)
+    factors_dict = factors.to_dict()
+    lat_r = (region.bbox[1] + region.bbox[3]) / 2
+    lon_r = (region.bbox[0] + region.bbox[2]) / 2
+    factors_dict["_lat"] = lat_r
+    factors_dict["_lon"] = lon_r
 
     # 2. Get recent risk history from database
     history = db.get_risk_history(region_id, limit=10)
@@ -352,7 +365,7 @@ def explain_prediction(region_id: int):
     # 3. Run ML prediction with full explanation
     ml_result = predictor.explain_prediction(
         flood_history=history_dicts,
-        external_factors=factors.to_dict(),
+        external_factors=factors_dict,
         region_name=region.name,
     )
 
@@ -480,21 +493,24 @@ def validate_prediction(region_id: int):
     if not region:
         raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
 
-    # Run our prediction first
+    # Run our prediction first (with lat/lon for model_hub enrichment)
     history = db.get_risk_history(region_id, limit=10)
     history_dicts = [r.to_dict() for r in history]
     factors = external.get_risk_factors(region.bbox)
+    factors_dict = factors.to_dict()
+    lat = (region.bbox[1] + region.bbox[3]) / 2
+    lon = (region.bbox[0] + region.bbox[2]) / 2
+    factors_dict["_lat"] = lat
+    factors_dict["_lon"] = lon
     our_prediction = predictor.predict(
         flood_history=history_dicts,
-        external_factors=factors.to_dict(),
+        external_factors=factors_dict,
         region_name=region.name,
     )
 
     # Cross-validate against GloFAS
     from processing.live_flood_data import LiveFloodDataFetcher
     live_fetcher = LiveFloodDataFetcher()
-    lat = (region.bbox[1] + region.bbox[3]) / 2
-    lon = (region.bbox[0] + region.bbox[2]) / 2
 
     validation = live_fetcher.validate_prediction(
         lat=lat,
@@ -1021,7 +1037,10 @@ def get_nlg_summary(region_id: int):
             from processing.external_data import ExternalDataIntegrator
             ext = ExternalDataIntegrator()
             factors = ext.get_risk_factors(region.bbox)
-            pred = predictor.predict(hist_dicts, factors.to_dict(), region.name)
+            f_dict = factors.to_dict()
+            f_dict["_lat"] = (region.bbox[1] + region.bbox[3]) / 2
+            f_dict["_lon"] = (region.bbox[0] + region.bbox[2]) / 2
+            pred = predictor.predict(hist_dicts, f_dict, region.name)
             prediction_data = pred.to_dict() if pred else None
         except Exception:
             pass
