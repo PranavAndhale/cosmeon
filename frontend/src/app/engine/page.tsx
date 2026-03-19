@@ -186,7 +186,7 @@ export default function GeospatialEngine() {
   const [analyzing, setAnalyzing] = useState(false);
   const [explanation, setExplanation] = useState<ExplainData | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
-  const [showIndependence, setShowIndependence] = useState(false);
+  // showIndependence removed — section was removed from UI
   const [loading, setLoading] = useState(true);
 
   // ── Forecast & NLG State ──
@@ -503,7 +503,6 @@ export default function GeospatialEngine() {
   useEffect(() => {
     if (!selectedRegion) return;
     setExplanation(null);
-    setShowIndependence(false);
     loadRegionData(selectedRegion, true); // auto-analyze on every region select
   }, [selectedRegion, loadRegionData]);
 
@@ -947,7 +946,7 @@ export default function GeospatialEngine() {
                     <span className={`text-xl font-bold ${textMono} text-white`}>{(liveDetection?.flood_area_km2 ?? latestRisk.flood_area_km2).toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
                   </div>
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Confidence</span>
+                    <span className={`text-[13px] text-gray-500 uppercase ${textMono}`} title="Data quality score based on source availability (GloFAS, weather, elevation)">Data Quality</span>
                     <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{((liveDetection?.confidence_score ?? latestRisk.confidence_score) * 100).toFixed(0)}%</span>
                   </div>
                 </div>
@@ -993,7 +992,7 @@ export default function GeospatialEngine() {
                       <span style={{ color: primaryColor }}>{(prediction.flood_probability * 100).toFixed(0)}%</span>
                     </div>
                     <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300" title="How decisive the prediction is — gap between top two class scores">Model Confidence</span>
+                      <span className="text-gray-300" title="Probability of the predicted risk class — higher means the model is more certain">Model Confidence</span>
                       <span className="text-gray-400">{(prediction.confidence * 100).toFixed(0)}%</span>
                     </div>
                   </div>
@@ -1220,57 +1219,6 @@ export default function GeospatialEngine() {
                         ))}
                       </div>
 
-                      {/* Model Independence Proof */}
-                      <div className="bg-[#0A0E18] border border-blue-500/20 rounded-xl p-4 flex flex-col gap-2">
-                        <button onClick={() => setShowIndependence(!showIndependence)}
-                          className={`text-[13px] uppercase ${textMono} tracking-widest text-blue-400 flex items-center justify-between w-full`}>
-                          Model Independence Proof
-                          <ChevronDown size={14} className={`transition-transform ${showIndependence ? 'rotate-180' : ''}`} />
-                        </button>
-                        <p className={`text-[12px] text-gray-500 ${textMono}`}>
-                          Proves the ML model predicts independently and does NOT copy GloFAS.
-                        </p>
-
-                        {showIndependence && (
-                          <div className="flex flex-col gap-2 mt-1">
-                            <div className="flex gap-2 items-start">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 mt-0.5">USES</span>
-                              <span className={`text-[13px] text-gray-400 ${textMono} leading-relaxed`}>{proof.model_uses}</span>
-                            </div>
-                            <div className="flex gap-2 items-start">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 shrink-0 mt-0.5">NO</span>
-                              <span className={`text-[13px] text-gray-400 ${textMono} leading-relaxed`}>{proof.model_does_not_use}</span>
-                            </div>
-                            <div className="flex gap-2 items-start">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shrink-0 mt-0.5">GLOFAS</span>
-                              <span className={`text-[13px] text-gray-400 ${textMono} leading-relaxed`}>{proof.glofas_uses}</span>
-                            </div>
-                            <div className="flex gap-2 items-start">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0 mt-0.5">TRAIN</span>
-                              <span className={`text-[13px] text-gray-400 ${textMono} leading-relaxed`}>{proof.how_training_works}</span>
-                            </div>
-                            <div className="flex gap-2 items-start">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0 mt-0.5">VERIFY</span>
-                              <span className={`text-[13px] text-gray-400 ${textMono} leading-relaxed`}>{proof.verification}</span>
-                            </div>
-
-                            {/* Methodology comparison */}
-                            <div className="mt-2 pt-2 border-t border-white/5">
-                              <span className={`text-[12px] text-gray-500 uppercase ${textMono}`}>Methodology Comparison</span>
-                              <div className="mt-1.5 flex flex-col gap-1.5">
-                                <div className="text-[13px]">
-                                  <b className="text-violet-400">Our ML Model: </b>
-                                  <span className="text-gray-500">{comp.our_methodology}</span>
-                                </div>
-                                <div className="text-[13px]">
-                                  <b className="text-cyan-400">GloFAS System: </b>
-                                  <span className="text-gray-500">{comp.glofas_methodology}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     </>
                   );
                 })()}
@@ -1388,12 +1336,18 @@ export default function GeospatialEngine() {
                                     <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
                                     <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} unit="%" />
                                     <RechartsTooltip
-                                      contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12 }}
-                                      formatter={(value: number | string | undefined) => [`${value ?? 0}%`, currentOrb.chartLabel]}
+                                      contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12, pointerEvents: 'none' }}
+                                      position={{ y: 0 }}
+                                      offset={15}
+                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                      formatter={(value: any, name: any) => {
+                                        if (name === 'upper' || name === 'lower') return [null, null];
+                                        return [`${value ?? 0}%`, currentOrb.chartLabel];
+                                      }}
                                     />
-                                    <Area type="monotone" dataKey="upper" stroke="none" fill="url(#confGrad)" />
-                                    <Area type="monotone" dataKey="lower" stroke="none" fill="transparent" />
-                                    <Area type="monotone" dataKey="risk" stroke={primaryColor} fill="url(#forecastGrad)" strokeWidth={2.5} dot={{ r: 3, fill: primaryColor }} />
+                                    <Area type="monotone" dataKey="upper" stroke="none" fill="url(#confGrad)" name="upper" />
+                                    <Area type="monotone" dataKey="lower" stroke="none" fill="transparent" name="lower" />
+                                    <Area type="monotone" dataKey="risk" stroke={primaryColor} fill="url(#forecastGrad)" strokeWidth={2.5} dot={{ r: 3, fill: primaryColor }} name="risk" />
                                   </AreaChart>
                                 </ResponsiveContainer>
                               </div>
@@ -1692,8 +1646,13 @@ export default function GeospatialEngine() {
                           {financialLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /></div>}
                           {financialData && !financialLoading && (
                             <>
+                              {financialData.scenario_based && (
+                                <div className="text-[10px] font-mono text-amber-400/80 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1 text-center">
+                                  Scenario-based estimate (no active flood detected)
+                                </div>
+                              )}
                               <div className="text-center">
-                                <div className="text-[10px] text-gray-500 font-mono">TOTAL EXPOSURE</div>
+                                <div className="text-[10px] text-gray-500 font-mono">{financialData.scenario_based ? 'POTENTIAL EXPOSURE' : 'TOTAL EXPOSURE'}</div>
                                 <div className="text-[22px] font-bold font-mono text-emerald-400">
                                   ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
                                 </div>
@@ -1706,7 +1665,7 @@ export default function GeospatialEngine() {
                                 ].map(m => (
                                   <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
                                     <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
-                                    <div className="text-[12px] font-mono text-gray-300">${(m.value / 1000).toFixed(0)}K</div>
+                                    <div className="text-[12px] font-mono text-gray-300">${((m.value ?? 0) / 1000).toFixed(0)}K</div>
                                   </div>
                                 ))}
                               </div>
@@ -1857,7 +1816,7 @@ export default function GeospatialEngine() {
                             <span className={`text-xl font-bold ${textMono} text-white`}>{det.flood_area_km2?.toFixed(1) || '—'} <span className="text-sm text-gray-500">km²</span></span>
                           </div>
                           <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Confidence</span>
+                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`} title="Data quality score based on source availability (GloFAS, weather, elevation)">Data Quality</span>
                             <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{(det.confidence_score * 100).toFixed(0)}%</span>
                           </div>
                         </div>
@@ -1907,7 +1866,7 @@ export default function GeospatialEngine() {
                             <span style={{ color: primaryColor }}>{(pred.flood_probability * 100).toFixed(0)}%</span>
                           </div>
                           <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300" title="How decisive the prediction is — gap between top two class scores">Model Confidence</span>
+                            <span className="text-gray-300" title="Probability of the predicted risk class — higher means the model is more certain">Model Confidence</span>
                             <span className="text-gray-400">{(pred.confidence * 100).toFixed(0)}%</span>
                           </div>
                           {pred.model_version && (
@@ -2171,7 +2130,9 @@ export default function GeospatialEngine() {
                                           <XAxis dataKey="month" tick={{ fill: '#6b7280', fontSize: 11 }} />
                                           <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} domain={[0, 100]} unit="%" />
                                           <RechartsTooltip
-                                            contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12 }}
+                                            contentStyle={{ background: '#0A1628', border: `1px solid ${primaryColor}44`, borderRadius: 8, fontSize: 12, pointerEvents: 'none' }}
+                                            position={{ y: 0 }}
+                                            offset={15}
                                             formatter={(value: number | string | undefined) => [`${value ?? 0}%`, currentOrb.chartLabel]}
                                           />
                                           <Area type="monotone" dataKey="risk" stroke={primaryColor} fill="url(#forecastGradAdhoc)" strokeWidth={2.5} dot={{ r: 3, fill: primaryColor }} />
@@ -2460,8 +2421,13 @@ export default function GeospatialEngine() {
                                 {financialLoading && <div className="flex justify-center py-6"><div className="w-7 h-7 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" /></div>}
                                 {financialData && !financialLoading && (
                                   <>
+                                    {financialData.scenario_based && (
+                                      <div className="text-[10px] font-mono text-amber-400/80 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1 text-center">
+                                        Scenario-based estimate (no active flood detected)
+                                      </div>
+                                    )}
                                     <div className="text-center">
-                                      <div className="text-[10px] text-gray-500 font-mono">TOTAL EXPOSURE</div>
+                                      <div className="text-[10px] text-gray-500 font-mono">{financialData.scenario_based ? 'POTENTIAL EXPOSURE' : 'TOTAL EXPOSURE'}</div>
                                       <div className="text-[22px] font-bold font-mono text-emerald-400">
                                         ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
                                       </div>
@@ -2474,7 +2440,7 @@ export default function GeospatialEngine() {
                                       ].map(m => (
                                         <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
                                           <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
-                                          <div className="text-[12px] font-mono text-gray-300">${(m.value / 1000).toFixed(0)}K</div>
+                                          <div className="text-[12px] font-mono text-gray-300">${((m.value ?? 0) / 1000).toFixed(0)}K</div>
                                         </div>
                                       ))}
                                     </div>
@@ -2768,7 +2734,17 @@ export default function GeospatialEngine() {
 
                     {/* Flood % over time */}
                     <div className="bg-[#151A22] border border-white/5 rounded-xl p-6">
-                      <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">{currentOrb.chartLabel} % — Monthly Average vs Peak</h3>
+                      <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-2">{currentOrb.chartLabel} % — Monthly Average vs Peak</h3>
+                      <div className="flex items-center gap-4 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-4 h-0.5 rounded" style={{ backgroundColor: primaryColor }} />
+                          <span className="text-[10px] font-mono text-gray-500">Monthly Avg (ERA5 percentile)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-4 h-0.5 rounded bg-orange-500" style={{ borderTop: '1px dashed #f97316' }} />
+                          <span className="text-[10px] font-mono text-gray-500">Monthly Peak</span>
+                        </div>
+                      </div>
                       <div className="h-[200px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
@@ -2785,9 +2761,9 @@ export default function GeospatialEngine() {
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
                             <XAxis dataKey="month_label" tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
                             <YAxis tick={{ fill: '#4b5563', fontSize: 10, fontFamily: 'monospace' }} tickLine={false} axisLine={false} />
-                            <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }} formatter={(v) => [`${Number(v).toFixed(1)}%`]} />
-                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'avg_flood_pct' : currentOrb.id === 'infra' ? 'avg_water_change_pct' : 'avg_vegetation_stress'} stroke={primaryColor} fill="url(#trendGradAvg)" strokeWidth={2} name="Avg %" dot={false} />
-                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'max_flood_pct' : currentOrb.id === 'infra' ? 'max_water_change_pct' : 'max_vegetation_stress'} stroke="#f97316" fill="url(#trendGradPeak)" strokeWidth={1.5} strokeDasharray="4 2" name="Peak %" dot={false} />
+                            <RechartsTooltip contentStyle={{ backgroundColor: '#0D1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontFamily: 'monospace', fontSize: 12, color: '#e2e8f0' }} formatter={(v, name) => [`${Number(v).toFixed(1)}%`, name === 'Monthly Average' ? 'Monthly Avg' : 'Monthly Peak']} />
+                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'avg_flood_pct' : currentOrb.id === 'infra' ? 'avg_water_change_pct' : 'avg_vegetation_stress'} stroke={primaryColor} fill="url(#trendGradAvg)" strokeWidth={2} name="Monthly Average" dot={false} />
+                            <Area type="monotone" dataKey={currentOrb.id === 'flood' ? 'max_flood_pct' : currentOrb.id === 'infra' ? 'max_water_change_pct' : 'max_vegetation_stress'} stroke="#f97316" fill="url(#trendGradPeak)" strokeWidth={1.5} strokeDasharray="4 2" name="Monthly Peak" dot={false} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -2810,7 +2786,8 @@ export default function GeospatialEngine() {
                         </div>
                       </div>
                       <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
-                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-4">Heavy Rain Days (&gt;20mm)</h3>
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-1">Heavy Rain Days (&gt;20mm)</h3>
+                        <p className="text-[9px] font-mono text-gray-600 mb-3">ERA5 reanalysis daily precipitation</p>
                         <div className="h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>

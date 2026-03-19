@@ -536,9 +536,12 @@ class FloodPredictor:
             else final_proba[pred_class]
         )
 
-        # confidence = margin between the top two class probabilities (how decisive the prediction is)
+        # confidence = predicted class probability (how likely the predicted class is)
+        # For a 4-class model, random baseline is 25%, so 40%+ is meaningful.
+        # This aligns with the detection confidence_score (data quality, 80-100%)
+        # so users see consistent ~40-70% ML confidence vs ~80-100% detection quality.
         sorted_proba = sorted(final_proba, reverse=True)
-        confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
+        confidence = sorted_proba[0]
 
         contributing = {
             name: round(float(imp), 3)
@@ -706,7 +709,7 @@ class FloodPredictor:
             flood_probability = float(pred_proba[pred_class])
 
         sorted_proba = sorted(pred_proba, reverse=True)
-        confidence = sorted_proba[0] - sorted_proba[1] if len(sorted_proba) > 1 else sorted_proba[0]
+        confidence = sorted_proba[0]  # predicted class probability
 
         # Build feature values dict (raw, unscaled)
         raw_values = features[0]
