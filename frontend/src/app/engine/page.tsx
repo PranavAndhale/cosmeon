@@ -1652,6 +1652,11 @@ export default function GeospatialEngine() {
                                   ))}
                                 </div>
                               )}
+                              {compoundData.data_sources && (
+                                <div className="text-[10px] text-gray-600 font-mono mt-1 pt-1 border-t border-white/5">
+                                  {compoundData.data_sources.methodology} · {Object.entries(compoundData.data_sources).filter(([k]) => !['methodology', 'flood_probability'].includes(k)).map(([, v]) => v).join(' · ')}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -2413,6 +2418,11 @@ export default function GeospatialEngine() {
                                             <span className="text-rose-400">→</span> {r}
                                           </div>
                                         ))}
+                                      </div>
+                                    )}
+                                    {compoundData.data_sources && (
+                                      <div className="text-[10px] text-gray-600 font-mono mt-1 pt-1 border-t border-white/5">
+                                        {compoundData.data_sources.methodology} · {Object.entries(compoundData.data_sources).filter(([k]) => !['methodology', 'flood_probability'].includes(k)).map(([, v]) => v).join(' · ')}
                                       </div>
                                     )}
                                   </>
