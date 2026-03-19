@@ -117,8 +117,9 @@ class CompoundRiskEngine:
         # Standard: >5°C anomaly = severe, >3°C = high, >1°C = moderate
         heat_hazard_10 = min(10.0, max(0.0, thermal_anomaly) / 5.0 * 10.0)
 
-        # Combined hazard: INFORM prioritizes dominant hazard type
-        hazard_score = max(flood_hazard_10, precip_hazard_10) * 0.7 + heat_hazard_10 * 0.3
+        # Combined hazard: flood is primary signal (50%), precip secondary (30%), heat modifier (20%)
+        # OLD: max(flood, precip) * 0.7 + heat * 0.3 let precip overpower a low flood signal
+        hazard_score = flood_hazard_10 * 0.50 + precip_hazard_10 * 0.30 + heat_hazard_10 * 0.20
 
         # ── EXPOSURE DIMENSION (0–10) ────────────────────────────────────────
         # Population exposure: INFORM brackets based on World Bank density
@@ -244,6 +245,17 @@ class CompoundRiskEngine:
         result.cascading_amplification = round(amplification, 3)
         result.interaction_effects = interactions
         result.compound_score = min(1.0, compound_01 * amplification)
+
+        # ── Flood-probability guardrail ────────────────────────────────────────
+        # The INFORM geometric mean can produce CRITICAL scores even when actual
+        # flood probability is near-zero, because high exposure/vulnerability
+        # dimensions (pop density, elevation, vegetation stress) dominate.
+        # Cap compound score based on the actual detection signal.
+        if flood_probability < 0.15:
+            result.compound_score = min(result.compound_score, 0.45)  # cap at HIGH max
+        elif flood_probability < 0.40:
+            result.compound_score = min(result.compound_score, 0.65)  # cap at CRITICAL threshold
+
         result.compound_level = self._score_to_level(result.compound_score)
 
         # Dominant hazard

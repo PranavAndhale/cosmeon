@@ -202,6 +202,29 @@ class FinancialImpactEngine:
             depth_by_risk = {"LOW": 0.0, "MEDIUM": 0.3, "HIGH": 0.8, "CRITICAL": 1.5}
             flood_depth_m = depth_by_risk.get(risk_level, 0.3)
 
+        # ── Risk-level dampening ───────────────────────────────────────────────
+        # When detection says LOW or MEDIUM risk and GloFAS shows no elevated
+        # discharge, dampen the financial impact to prevent unrealistic numbers.
+        # Bihar example: large area × high pop × 10% prob was producing $41M
+        # despite GloFAS showing normal discharge.
+        risk_dampening = 1.0
+        if risk_level == "LOW":
+            risk_dampening = 0.05 if discharge_anomaly < 1.0 else 0.20
+        elif risk_level == "MEDIUM":
+            risk_dampening = 0.30 if discharge_anomaly < 1.0 else 0.70
+        # HIGH/CRITICAL: no dampening (risk_dampening stays 1.0)
+
+        # ── Cap flood area for realism ─────────────────────────────────────────
+        # Bounding box area can be enormous (Bihar = 166,000 km²).
+        # Even worst floods rarely inundate >5% of a region.
+        # For LOW risk with no discharge anomaly, cap much more aggressively.
+        if total_area_km2 > 0:
+            flood_area_km2 = min(flood_area_km2, total_area_km2 * 0.05)
+        if risk_level == "LOW" and discharge_anomaly < 1.0:
+            flood_area_km2 = min(flood_area_km2, 50.0)  # max 50 km² for LOW risk
+        elif risk_level == "MEDIUM" and discharge_anomaly < 1.0:
+            flood_area_km2 = min(flood_area_km2, 200.0)  # max 200 km² for MEDIUM
+
         # JRC damage fractions per sector
         residential_frac = _jrc_damage_fraction(flood_depth_m, "residential")
         commercial_frac = _jrc_damage_fraction(flood_depth_m, "commercial")
@@ -217,7 +240,7 @@ class FinancialImpactEngine:
         else:
             capital_per_km2 = 500_000  # fallback: $500K/km²
 
-        exposed_capital = flood_area_km2 * capital_per_km2 * flood_probability
+        exposed_capital = flood_area_km2 * capital_per_km2 * flood_probability * risk_dampening
 
         # Sector breakdown using JRC damage fractions
         infra_damage = exposed_capital * 0.35 * infra_frac
@@ -242,9 +265,9 @@ class FinancialImpactEngine:
         indirect_ratio = _SENDAI_INDIRECT_RATIOS.get(income_class, 0.8)
         result.indirect_costs_usd = result.direct_damage_usd * indirect_ratio
 
-        # Population impact
+        # Population impact (with risk dampening applied)
         result.affected_population = int(
-            flood_area_km2 * population_density * flood_probability
+            flood_area_km2 * population_density * flood_probability * risk_dampening
         )
 
         # Displacement: UNHCR per-capita costs
