@@ -975,7 +975,49 @@ export default function GeospatialEngine() {
                     <span className="text-gray-300">Last Analyzed</span>
                     <span className="text-gray-400">{latestRisk.timestamp ? new Date(latestRisk.timestamp).toLocaleDateString() : 'N/A'}</span>
                   </div>
+                  {/* Live detection data source */}
+                  {liveDetection?.data_sources && (
+                    <div className="pt-2 border-t border-white/5">
+                      <span className={`text-[11px] text-gray-600 ${textMono}`}>
+                        Live: {liveDetection.data_sources.join(' · ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Risk Factor Breakdown from live detection */}
+                {liveDetection?.risk_factors && Object.keys(liveDetection.risk_factors).filter(k => k !== 'composite_score').length > 0 && (
+                  <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2">
+                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                      Live Risk Factor Scores
+                    </span>
+                    <span className={`text-[11px] text-gray-600 ${textMono} -mt-1`}>
+                      Composite: <b className="text-white">{((liveDetection.risk_factors.composite_score ?? 0) * 100).toFixed(1)}%</b> · Confidence: <b className="text-gray-300">{(liveDetection.confidence_score * 100).toFixed(0)}%</b>
+                    </span>
+                    {Object.entries(liveDetection.risk_factors)
+                      .filter(([k]) => k !== 'composite_score')
+                      .sort(([, a]: any, [, b]: any) => (b.weighted ?? 0) - (a.weighted ?? 0))
+                      .map(([key, val]: any) => (
+                        <div key={key} className="flex flex-col gap-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[12px] text-gray-400 ${textMono}`}>{key.replace(/_/g, ' ')}</span>
+                            <span className={`text-[12px] ${textMono} font-bold`} style={{ color: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#6b7280' }}>
+                              {(val.score * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-[#0B0E11] rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${Math.min(val.score * 100, 100)}%`,
+                                backgroundColor: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#374151'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                )}
 
                 {/* Prediction Block */}
                 {prediction && (
@@ -1848,6 +1890,47 @@ export default function GeospatialEngine() {
                             <span className="text-gray-300">Last Analyzed</span>
                             <span className="text-gray-400">{det.timestamp ? new Date(det.timestamp).toLocaleDateString() : 'Just now'}</span>
                           </div>
+                          {det.data_sources && (
+                            <div className="pt-2 border-t border-white/5">
+                              <span className={`text-[11px] text-gray-600 ${textMono}`}>
+                                Live: {det.data_sources.join(' · ')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Risk Factor Breakdown from ad-hoc detection */}
+                      {det?.risk_factors && Object.keys(det.risk_factors).filter((k: string) => k !== 'composite_score').length > 0 && (
+                        <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2">
+                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                            Live Risk Factor Scores
+                          </span>
+                          <span className={`text-[11px] text-gray-600 ${textMono} -mt-1`}>
+                            Composite: <b className="text-white">{((det.risk_factors.composite_score ?? 0) * 100).toFixed(1)}%</b> · Confidence: <b className="text-gray-300">{(det.confidence_score * 100).toFixed(0)}%</b>
+                          </span>
+                          {Object.entries(det.risk_factors)
+                            .filter(([k]: any) => k !== 'composite_score')
+                            .sort(([, a]: any, [, b]: any) => (b.weighted ?? 0) - (a.weighted ?? 0))
+                            .map(([key, val]: any) => (
+                              <div key={key} className="flex flex-col gap-0.5">
+                                <div className="flex items-center justify-between">
+                                  <span className={`text-[12px] text-gray-400 ${textMono}`}>{key.replace(/_/g, ' ')}</span>
+                                  <span className={`text-[12px] ${textMono} font-bold`} style={{ color: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#6b7280' }}>
+                                    {(val.score * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-[#0B0E11] rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${Math.min(val.score * 100, 100)}%`,
+                                      backgroundColor: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#374151'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ))
+                          }
                         </div>
                       )}
 

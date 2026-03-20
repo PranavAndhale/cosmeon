@@ -25,6 +25,15 @@ export function AnalyticsDrawer({ region, changes, onClose, activeOrb }: Analyti
             area: c.affected_area_km2
         }));
 
+    // Derive real metrics from change events
+    const absChanges = sortedChanges.map(c => Math.abs(c.value));
+    const severityIndex = absChanges.length > 0
+        ? Math.min(10, Math.round((Math.max(...absChanges) / 10) * 10) / 10)
+        : null;
+    const riskDelta = sortedChanges.length >= 2
+        ? ((sortedChanges[sortedChanges.length - 1].value - sortedChanges[0].value)).toFixed(1)
+        : null;
+
     return (
         <AnimatePresence>
             {region && (
@@ -109,15 +118,21 @@ export function AnalyticsDrawer({ region, changes, onClose, activeOrb }: Analyti
                             <div className="flex flex-col gap-4">
                                 <div className="flex justify-between items-end pb-2 border-b border-white/5">
                                     <span className="text-sm text-white/70">Severity Index</span>
-                                    <span className="font-mono text-xl font-bold text-white">4.2<span className="text-[10px] text-white/40 ml-1">/10</span></span>
+                                    {severityIndex !== null
+                                        ? <span className="font-mono text-xl font-bold text-white">{severityIndex}<span className="text-[10px] text-white/40 ml-1">/10</span></span>
+                                        : <span className="font-mono text-sm text-white/40">No data</span>
+                                    }
                                 </div>
                                 <div className="flex justify-between items-end pb-2 border-b border-white/5">
-                                    <span className="text-sm text-white/70">Risk Delta (YTD)</span>
-                                    <span className="font-mono text-xl font-bold" style={{ color }}>+14.5%</span>
+                                    <span className="text-sm text-white/70">Risk Delta (period)</span>
+                                    {riskDelta !== null
+                                        ? <span className="font-mono text-xl font-bold" style={{ color }}>{Number(riskDelta) >= 0 ? '+' : ''}{riskDelta}%</span>
+                                        : <span className="font-mono text-sm text-white/40">No data</span>
+                                    }
                                 </div>
                                 <div className="flex justify-between items-end pb-2 border-b border-white/5">
-                                    <span className="text-sm text-white/70">Analyzed Assets</span>
-                                    <span className="font-mono text-xl font-bold text-white">{sortedChanges.length * 42}</span>
+                                    <span className="text-sm text-white/70">Change Events</span>
+                                    <span className="font-mono text-xl font-bold text-white">{sortedChanges.length}</span>
                                 </div>
                             </div>
 
