@@ -2109,14 +2109,15 @@ def _build_real_monthly_trends(lat: float, lon: float, bbox: list, months: int) 
         anomaly = (total_precip - clim_mean) / max(clim_mean, 0.1)
         water_change = round(min(30.0, max(-15.0, anomaly * 15.0)), 2)
 
-        # ── FAO-56 ET0 vegetation stress (real ERA5 data) ──
+        # ── Vegetation stress: dryness anomaly relative to climatological mean ──
+        # Values centred at 50 (= normal), >50 means drier than usual (stressed),
+        # <50 means wetter than usual (healthy).  Uses same clim_totals baseline
+        # already built for the ERA5 percentile flood ranking above.
         total_et0 = sum(days_et0)
-        # Vegetation stress: ET0 demand exceeds precipitation supply
-        if total_et0 > 0:
-            water_balance_ratio = total_precip / max(total_et0, 0.1)
-            veg_stress = round(max(0.0, min(100.0, (1.0 - water_balance_ratio) * 50.0)), 2)
-        else:
-            veg_stress = 0.0
+        clim_precip_vals = clim_totals.get(month_num, [total_precip])
+        clim_precip_mean = sum(clim_precip_vals) / max(len(clim_precip_vals), 1)
+        dryness = clim_precip_mean - total_precip  # positive = drier than normal
+        veg_stress = round(max(0.0, min(100.0, 50.0 + (dryness / max(clim_precip_mean, 1.0)) * 50.0)), 2)
 
         # Risk level from ERA5 percentile ranking
         if avg_flood_pct >= 90 or extreme_days >= 5:
