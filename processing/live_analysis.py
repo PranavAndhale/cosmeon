@@ -358,13 +358,16 @@ class LiveAnalysisEngine:
             scores["rainfall_forecast"] = 0.05
 
         # Factor 6: Terrain vulnerability
+        # Only apply elevation thresholds when we have a real value (> 0).
+        # elevation == 0 means the elevation API failed; treat as unknown (base score).
         terrain_score = 0.1
-        if elevation < 10:
-            terrain_score = 0.9
-        elif elevation < 50:
-            terrain_score = 0.6
-        elif elevation < 100:
-            terrain_score = 0.3
+        if elevation > 0:
+            if elevation < 10:
+                terrain_score = 0.9
+            elif elevation < 50:
+                terrain_score = 0.6
+            elif elevation < 100:
+                terrain_score = 0.3
         if low_elev_pct > 0.5:
             terrain_score = min(terrain_score + 0.2, 1.0)
         scores["terrain_vulnerability"] = terrain_score

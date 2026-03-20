@@ -822,6 +822,16 @@ def get_river_discharge(lat: float, lon: float, past_days: int = 30) -> dict:
     except Exception as e:
         logger.warning("T3 discharge (GloFAS prior-year) failed: %s", e)
 
+    # T4: ERA5 archive precipitation-based surrogate (flood-api subdomain is blocked on some hosts)
+    try:
+        result = _discharge_precip_surrogate(lat, lon, past_days)
+        if result and result.get("current_discharge_m3s", 0) >= 0:
+            result["_tier"] = 4
+            logger.info("Discharge T4 (precip surrogate from ERA5 archive): lat=%.2f lon=%.2f", lat, lon)
+            return result
+    except Exception as e:
+        logger.warning("T4 discharge (precip surrogate) failed: %s", e)
+
     return {
         "current_discharge_m3s": 0.0, "mean_discharge_m3s": 0.0,
         "anomaly_sigma": 0.0, "flood_risk_level": "UNKNOWN",
@@ -932,6 +942,48 @@ def _discharge_glofas_prior_year(lat: float, lon: float) -> dict:
         "flood_risk_level": risk,
         "forecast_discharge": discharge[-7:],
         "source": "GloFAS v4 same-month prior year via Open-Meteo Flood API",
+    }
+
+
+def _discharge_precip_surrogate(lat: float, lon: float, past_days: int) -> dict:
+    """
+    T4: Precipitation-based discharge surrogate via ERA5 archive API.
+    Used when flood-api.open-meteo.com is unreachable (e.g. blocked on some hosting providers).
+    Fetches actual ERA5 precipitation and applies a 3-day lag runoff proxy.
+    """
+    end_dt = datetime.utcnow() - timedelta(days=5)  # ERA5 has ~5-day lag
+    start_dt = end_dt - timedelta(days=past_days)
+    resp = requests.get(
+        _ARCHIVE_API,
+        params={
+            "latitude": lat, "longitude": lon,
+            "start_date": start_dt.strftime("%Y-%m-%d"),
+            "end_date": end_dt.strftime("%Y-%m-%d"),
+            "daily": "precipitation_sum",
+        },
+        timeout=_TIMEOUT_SLOW,
+    )
+    resp.raise_for_status()
+    daily = resp.json().get("daily", {})
+    precip = [p if p is not None else 0.0 for p in daily.get("precipitation_sum", [])]
+    if not precip:
+        return {}
+
+    # 3-day rolling sum as runoff proxy; scale by 10 m³/s per mm/day
+    lag = 3
+    surrogate = [sum(precip[max(0, i - lag):i + 1]) * 10.0 for i in range(len(precip))]
+    current = round(surrogate[-1], 2) if surrogate else 0.0
+    mean_v = float(np.mean(surrogate)) if surrogate else 1.0
+    std_v = float(np.std(surrogate)) if len(surrogate) > 1 else max(mean_v * 0.2, 1.0)
+    anomaly = round((current - mean_v) / max(std_v, 0.01), 2)
+    risk = _discharge_to_risk(anomaly, current, mean_v)
+    return {
+        "current_discharge_m3s": current,
+        "mean_discharge_m3s": round(mean_v, 2),
+        "anomaly_sigma": anomaly,
+        "flood_risk_level": risk,
+        "forecast_discharge": surrogate[-7:],
+        "source": "ERA5 precipitation surrogate (flood API unavailable)",
     }
 
 

@@ -160,17 +160,20 @@ class ExternalDataIntegrator:
         elif max_daily > 50:
             multiplier *= 1.2
 
-        # Elevation factor
+        # Elevation factor (only apply when we have a real non-zero value;
+        # elevation == 0 means the API failed, not that terrain is at sea level)
         mean_elev = elevation.get("mean_elevation_m", 100)
         low_pct = elevation.get("low_elevation_pct", 0)
 
-        if mean_elev < 10:
-            multiplier *= 1.5
-        elif mean_elev < 50:
-            multiplier *= 1.2
+        if mean_elev > 0:
+            if mean_elev < 10:
+                multiplier *= 1.5
+            elif mean_elev < 50:
+                multiplier *= 1.2
 
-        if low_pct > 0.5:
-            multiplier *= 1.3
+        if low_pct > 0:
+            if low_pct > 0.5:
+                multiplier *= 1.3
 
         return round(multiplier, 2)
 
