@@ -154,7 +154,14 @@ type OrbKey = keyof typeof ORB_DEFS;
 const glassClass = "bg-[#0B0E11]/70 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl";
 const textMono = "font-mono tracking-tight";
 
-// ─── Helper ───
+// ─── Helpers ───
+function fmtUSD(v: number) {
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
 function riskColor(level: string) {
   switch (level) {
     case "CRITICAL": return "#ef4444";
@@ -220,6 +227,8 @@ export default function GeospatialEngine() {
   const [adHocLoading, setAdHocLoading] = useState(false);
   /** Real Open-Meteo ERA5 monthly trend data for the current ad-hoc location */
   const [adHocTrendData, setAdHocTrendData] = useState<TrendData | null>(null);
+  /** Real Open-Meteo ERA5 monthly trend data for the current registered region (vegetation orb) */
+  const [regionTrendData, setRegionTrendData] = useState<TrendData | null>(null);
   const [mapClickPopup, setMapClickPopup] = useState<{ lat: number; lon: number; name?: string } | null>(null);
 
   // ── UI State ──
@@ -377,6 +386,7 @@ export default function GeospatialEngine() {
   // ── Select a region & fly to it ──
   const selectRegion = useCallback((reg: Region | null) => {
     setSelectedRegion(reg);
+    setRegionTrendData(null);
     setAdHocLocation(null); // clear ad-hoc when selecting a real region
     setAdHocData(null);
     setAdHocExplanation(null);
@@ -439,6 +449,16 @@ export default function GeospatialEngine() {
       if (d && d.trend && d.trend.length > 0) setAdHocTrendData(d);
     });
   }, [adHocLocation]);
+
+  // ── Fetch ERA5 trends for registered region (used by vegetation orb chart) ──
+  useEffect(() => {
+    if (!selectedRegion) { setRegionTrendData(null); return; }
+    const lat = (selectedRegion.bbox[1] + selectedRegion.bbox[3]) / 2;
+    const lon = (selectedRegion.bbox[0] + selectedRegion.bbox[2]) / 2;
+    fetchTrendsLocation(lat, lon, 12).then(d => {
+      if (d?.trend?.length) setRegionTrendData(d);
+    });
+  }, [selectedRegion]);
 
   // ── Load Initial Data ──
   useEffect(() => {
@@ -556,8 +576,19 @@ export default function GeospatialEngine() {
         vegetation_stress: t.avg_vegetation_stress,
       }));
     }
+    // For registered regions in vegetation orb: use ERA5 trend data so values
+    // reflect actual climatological variation instead of flat DB records.
+    if (selectedRegion && activeOrb === 'vegetation' && regionTrendData?.trend?.length) {
+      return regionTrendData.trend.map(t => ({
+        date: t.month_label,
+        flood: t.avg_flood_pct,
+        confidence: t.heavy_rain_days,
+        water_change: t.avg_water_change_pct,
+        vegetation_stress: t.avg_vegetation_stress,
+      }));
+    }
     return chartData;
-  }, [adHocLocation, adHocTrendData, chartData]);
+  }, [adHocLocation, adHocTrendData, selectedRegion, activeOrb, regionTrendData, chartData]);
 
   // ── Choose chart data key based on active orb ──
   const chartKey = activeOrb === "flood" ? "flood" : activeOrb === "infra" ? "water_change" : "vegetation_stress";
@@ -916,7 +947,7 @@ export default function GeospatialEngine() {
 
       {/* ═══ C. STRUCTURED INSIGHTS OUTPUT (RIGHT) ═══ */}
       <AnimatePresence>
-        {selectedRegion && latestRisk && (
+        {selectedRegion && (
           <motion.div key={`insights-${selectedRegion.id}-${activeOrb}`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="absolute right-6 top-28 bottom-32 w-[400px] z-20 flex flex-col gap-4 overflow-hidden">
             <div className={`${glassClass} flex flex-col h-full overflow-hidden`}>
 
@@ -924,13 +955,21 @@ export default function GeospatialEngine() {
               <div className="p-6 border-b border-white/10 bg-black/40 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>
-                      <AlertTriangle size={16} />
-                      {liveDetection?.detected_risk_level || latestRisk.risk_level} RISK
-                      <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
-                        {latestRisk.change_type}
+                    {latestRisk ? (
+                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>
+                        <AlertTriangle size={16} />
+                        {liveDetection?.detected_risk_level || latestRisk.risk_level} RISK
+                        <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
+                          {latestRisk.change_type}
+                        </span>
                       </span>
-                    </span>
+                    ) : (
+                      <div className="animate-pulse flex items-center gap-2">
+                        <div className="h-4 w-4 bg-gray-600 rounded" />
+                        <div className="h-4 w-32 bg-gray-700 rounded" />
+                        <div className="h-4 w-16 bg-gray-700 rounded" />
+                      </div>
+                    )}
                     <span className="text-white text-[15px] font-semibold mt-1">{selectedRegion.name} — {currentOrb.panelTitle}</span>
                   </div>
                   <button onClick={() => setSelectedRegion(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
@@ -940,6 +979,25 @@ export default function GeospatialEngine() {
 
               {/* Data Grid */}
               <div className="flex-grow p-6 flex flex-col gap-6 overflow-y-auto">
+                {!latestRisk ? (
+                  <div className="animate-pulse flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-[#151A22]/80 rounded-xl p-4 h-20" />
+                      <div className="bg-[#151A22]/80 rounded-xl p-4 h-20" />
+                    </div>
+                    <div className="bg-[#151A22]/80 rounded-xl p-4 h-40">
+                      <div className="h-3 w-32 bg-gray-700 rounded mb-4" />
+                      {[...Array(4)].map((_, i) => (
+                        <div key={i} className="flex justify-between mb-3">
+                          <div className="h-3 w-28 bg-gray-700 rounded" />
+                          <div className="h-3 w-16 bg-gray-600 rounded" />
+                        </div>
+                      ))}
+                    </div>
+                    <p className={`text-[13px] text-gray-500 text-center font-mono`}>Loading risk data…</p>
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
@@ -1223,9 +1281,23 @@ export default function GeospatialEngine() {
                       <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
                         <span className={`text-[13px] uppercase ${textMono} tracking-widest ${comp.agreement && comp.agreement_score >= 0.9 ? 'text-emerald-400' : 'text-amber-400'
                           }`}>
-                          {comp.agreement && comp.agreement_score >= 0.9 ? 'Why Both Sources Agree' : 'Why Predictions Differ'}
+                          {comp.agreement && comp.agreement_score >= 0.9
+                            ? 'Why Both Sources Agree'
+                            : comp.agreement
+                              ? "Why They're Close (Minor Difference)"
+                              : 'Why Predictions Differ'}
                         </span>
                         <p className={`text-sm text-gray-300 ${textMono} leading-relaxed`}>{comp.summary}</p>
+                        {gf.explanation && (
+                          <div className="text-[12px] text-cyan-400/80 font-mono leading-relaxed p-2 rounded bg-cyan-500/5 border-l-2 border-cyan-500/30">
+                            <span className="text-cyan-500 font-bold">GloFAS: </span>{gf.explanation}
+                          </div>
+                        )}
+                        {ml.explanation && (
+                          <div className="text-[12px] text-violet-400/80 font-mono leading-relaxed p-2 rounded bg-violet-500/5 border-l-2 border-violet-500/30">
+                            <span className="text-violet-400 font-bold">ML Model: </span>{ml.explanation}
+                          </div>
+                        )}
                         {comp.difference_reasons.map((reason, i) => (
                           <div key={i} className={`text-[13px] text-gray-400 leading-relaxed p-2.5 rounded-lg border-l-2 bg-[#151A22]/80 ${comp.agreement && comp.agreement_score >= 0.9 ? 'border-emerald-500/40' : 'border-amber-500/40'
                             }`}>
@@ -1266,7 +1338,7 @@ export default function GeospatialEngine() {
                 })()}
 
                 {/* Risk History Mini Chart */}
-                {chartData.length > 0 && (
+                {(chartData.length > 0 || (activeOrb === 'vegetation' && regionTrendData)) && (
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono} block mb-1`}>{currentOrb.chartLabel}</span>
                     <span className="text-[11px] text-gray-600 font-mono block mb-3">
@@ -1274,7 +1346,7 @@ export default function GeospatialEngine() {
                     </span>
                     <div className="h-[120px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData}>
+                        <AreaChart data={displayChartData}>
                           <defs>
                             <linearGradient id="miniGrad" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="5%" stopColor={primaryColor} stopOpacity={0.3} />
@@ -1696,8 +1768,13 @@ export default function GeospatialEngine() {
                               <div className="text-center">
                                 <div className="text-[10px] text-gray-500 font-mono">{financialData.scenario_based ? 'POTENTIAL EXPOSURE' : 'TOTAL EXPOSURE'}</div>
                                 <div className="text-[22px] font-bold font-mono text-emerald-400">
-                                  ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
+                                  {fmtUSD(financialData.total_impact_usd ?? 0)}
                                 </div>
+                                {financialData.confidence && (
+                                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${financialData.confidence === 'high' ? 'border-emerald-500/30 text-emerald-400' : financialData.confidence === 'medium' ? 'border-yellow-500/30 text-yellow-400' : 'border-gray-500/30 text-gray-400'}`}>
+                                    {financialData.confidence.toUpperCase()} CONFIDENCE
+                                  </span>
+                                )}
                               </div>
                               <div className="grid grid-cols-3 gap-1.5">
                                 {[
@@ -1707,7 +1784,7 @@ export default function GeospatialEngine() {
                                 ].map(m => (
                                   <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
                                     <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
-                                    <div className="text-[12px] font-mono text-gray-300">${((m.value ?? 0) / 1000).toFixed(0)}K</div>
+                                    <div className="text-[12px] font-mono text-gray-300">{fmtUSD(m.value ?? 0)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -1790,6 +1867,8 @@ export default function GeospatialEngine() {
                     )}
                   </AnimatePresence>
                 </div>
+                </>
+                )}
 
               </div>
 
@@ -2077,9 +2156,23 @@ export default function GeospatialEngine() {
                             {/* Why agree/differ */}
                             <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
                               <span className={`text-[13px] uppercase ${textMono} tracking-widest ${comp.agreement && comp.agreement_score >= 0.9 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                {comp.agreement && comp.agreement_score >= 0.9 ? 'Why Both Sources Agree' : 'Why Predictions Differ'}
+                                {comp.agreement && comp.agreement_score >= 0.9
+                                  ? 'Why Both Sources Agree'
+                                  : comp.agreement
+                                    ? "Why They're Close (Minor Difference)"
+                                    : 'Why Predictions Differ'}
                               </span>
                               <p className={`text-sm text-gray-300 ${textMono} leading-relaxed`}>{comp.summary}</p>
+                              {gf.explanation && (
+                                <div className="text-[12px] text-cyan-400/80 font-mono leading-relaxed p-2 rounded bg-cyan-500/5 border-l-2 border-cyan-500/30">
+                                  <span className="text-cyan-500 font-bold">GloFAS: </span>{gf.explanation}
+                                </div>
+                              )}
+                              {ml.explanation && (
+                                <div className="text-[12px] text-violet-400/80 font-mono leading-relaxed p-2 rounded bg-violet-500/5 border-l-2 border-violet-500/30">
+                                  <span className="text-violet-400 font-bold">ML Model: </span>{ml.explanation}
+                                </div>
+                              )}
                               {comp.difference_reasons.map((reason: string, i: number) => (
                                 <div key={i} className={`text-[13px] text-gray-400 leading-relaxed p-2.5 rounded-lg border-l-2 bg-[#151A22]/80 ${comp.agreement && comp.agreement_score >= 0.9 ? 'border-emerald-500/40' : 'border-amber-500/40'
                                   }`}>
@@ -2512,8 +2605,13 @@ export default function GeospatialEngine() {
                                     <div className="text-center">
                                       <div className="text-[10px] text-gray-500 font-mono">{financialData.scenario_based ? 'POTENTIAL EXPOSURE' : 'TOTAL EXPOSURE'}</div>
                                       <div className="text-[22px] font-bold font-mono text-emerald-400">
-                                        ${financialData.total_impact_usd?.toLocaleString() ?? '0'}
+                                        {fmtUSD(financialData.total_impact_usd ?? 0)}
                                       </div>
+                                      {financialData.confidence && (
+                                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${financialData.confidence === 'high' ? 'border-emerald-500/30 text-emerald-400' : financialData.confidence === 'medium' ? 'border-yellow-500/30 text-yellow-400' : 'border-gray-500/30 text-gray-400'}`}>
+                                          {financialData.confidence.toUpperCase()} CONFIDENCE
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="grid grid-cols-3 gap-1.5">
                                       {[
@@ -2523,7 +2621,7 @@ export default function GeospatialEngine() {
                                       ].map(m => (
                                         <div key={m.label} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
                                           <div className="text-[10px] text-gray-500 font-mono">{m.label}</div>
-                                          <div className="text-[12px] font-mono text-gray-300">${((m.value ?? 0) / 1000).toFixed(0)}K</div>
+                                          <div className="text-[12px] font-mono text-gray-300">{fmtUSD(m.value ?? 0)}</div>
                                         </div>
                                       ))}
                                     </div>
