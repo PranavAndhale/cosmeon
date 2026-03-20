@@ -294,7 +294,72 @@ class RealDataTrainer:
             return {"dates": dates, "discharge": discharge}
 
         except Exception as e:
-            logger.error("Failed to fetch discharge history: %s", e)
+            logger.error("Failed to fetch discharge history from flood API: %s", e)
+            logger.warning("Falling back to ERA5 precipitation surrogate for discharge labels")
+            return self._fetch_discharge_era5_surrogate(lat, lon, start_date, end_date, past_days)
+
+    def _fetch_discharge_era5_surrogate(
+        self,
+        lat: float,
+        lon: float,
+        start_date: str = None,
+        end_date: str = None,
+        past_days: int = 210,
+    ) -> dict:
+        """
+        ERA5 precipitation-based discharge surrogate.
+
+        Used when flood-api.open-meteo.com is unreachable (blocked on some hosts).
+        Fetches ERA5 precipitation and applies a 3-day lag runoff proxy
+        (3-day rolling sum × 10 m³/s per mm/day) — the same method used in
+        model_hub._discharge_precip_surrogate().
+
+        Returns the same schema as _fetch_discharge_history() so the caller
+        can still compute anomaly-based labels without any code changes.
+        """
+        try:
+            if start_date and end_date:
+                params = {
+                    "latitude": lat, "longitude": lon,
+                    "start_date": start_date, "end_date": end_date,
+                    "daily": "precipitation_sum",
+                }
+            else:
+                # Approximate start_date from past_days
+                end_dt = datetime.utcnow() - timedelta(days=5)
+                start_dt = end_dt - timedelta(days=past_days)
+                params = {
+                    "latitude": lat, "longitude": lon,
+                    "start_date": start_dt.strftime("%Y-%m-%d"),
+                    "end_date": end_dt.strftime("%Y-%m-%d"),
+                    "daily": "precipitation_sum",
+                }
+
+            resp = requests.get(WEATHER_ARCHIVE_API, params=params, timeout=20)
+            resp.raise_for_status()
+            daily = resp.json().get("daily", {})
+            dates = daily.get("time", [])
+            precip = [p if p is not None else 0.0 for p in daily.get("precipitation_sum", [])]
+
+            if not dates:
+                logger.error("ERA5 surrogate: no precipitation data returned")
+                return {"dates": [], "discharge": []}
+
+            # 3-day rolling sum × 10 m³/s as surrogate discharge
+            lag = 3
+            surrogate = [
+                sum(precip[max(0, i - lag):i + 1]) * 10.0
+                for i in range(len(precip))
+            ]
+
+            logger.info(
+                "ERA5 surrogate: built %d days of surrogate discharge (lat=%.2f, lon=%.2f)",
+                len(dates), lat, lon,
+            )
+            return {"dates": dates, "discharge": surrogate}
+
+        except Exception as e:
+            logger.error("ERA5 surrogate discharge also failed: %s", e)
             return {"dates": [], "discharge": []}
 
     def _fetch_weather_history(
