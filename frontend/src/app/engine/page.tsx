@@ -578,7 +578,7 @@ export default function GeospatialEngine() {
     }
     // For registered regions in vegetation orb: use ERA5 trend data so values
     // reflect actual climatological variation instead of flat DB records.
-    if (selectedRegion && activeOrb === 'vegetation' && regionTrendData?.trend?.length) {
+    if (selectedRegion && activeOrb === 'veg' && regionTrendData?.trend?.length) {
       return regionTrendData.trend.map(t => ({
         date: t.month_label,
         flood: t.avg_flood_pct,
@@ -1338,7 +1338,7 @@ export default function GeospatialEngine() {
                 })()}
 
                 {/* Risk History Mini Chart */}
-                {(chartData.length > 0 || (activeOrb === 'vegetation' && regionTrendData)) && (
+                {(chartData.length > 0 || (activeOrb === 'veg' && regionTrendData)) && (
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono} block mb-1`}>{currentOrb.chartLabel}</span>
                     <span className="text-[11px] text-gray-600 font-mono block mb-3">
