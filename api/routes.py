@@ -589,12 +589,34 @@ class SchedulerConfigRequest(BaseModel):
 
 @app.on_event("startup")
 async def auto_analyze_on_startup():
-    """Auto-analyze all regions on startup AND start the periodic scheduler."""
+    """Auto-analyze all regions on startup, pre-train ML model, and start scheduler."""
     import asyncio
+    import threading
     logger.info("=== AUTO-ANALYSIS: Running live detection on all regions ===")
+
+    def _train_predictor_background():
+        """Pre-train the ML predictor in a background thread so it is ready
+        before the first prediction request arrives, avoiding in-band blocking."""
+        if predictor.is_trained:
+            logger.info("Predictor already trained (loaded from disk) — skipping startup training")
+            return
+        logger.info("Pre-training ML predictor in background thread...")
+        try:
+            predictor.train_on_real_data()
+            logger.info("ML predictor pre-training complete (is_trained=%s)", predictor.is_trained)
+        except Exception as e:
+            logger.error("Background ML training failed: %s", e)
 
     async def run_analysis():
         await asyncio.sleep(3)  # Wait for DB to be ready
+
+        # Kick off ML model training in a separate OS thread so it doesn't
+        # block the async event loop or any incoming HTTP requests.
+        training_thread = threading.Thread(
+            target=_train_predictor_background, name="ml-predictor-trainer", daemon=True
+        )
+        training_thread.start()
+
         all_regions = db.get_all_regions()
         if all_regions:
             regions_data = [

@@ -16,6 +16,7 @@ Improvements over v1:
   - Better hyperparameters with regularisation
 """
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -103,6 +104,10 @@ class FloodPredictor:
         self._lgbm_model = self._build_lgbm_model()
         # Cached averaged feature importances across all trained models
         self._fi = np.ones(len(self.FEATURE_NAMES)) / len(self.FEATURE_NAMES)
+
+        # Training lock — prevents concurrent training from multiple requests
+        # and ensures predict() never races with an in-progress train().
+        self._training_lock = threading.Lock()
 
         # LSTM model (optional ensemble enhancement)
         self._lstm_manager = None
@@ -282,6 +287,13 @@ class FloodPredictor:
                 {"name": "Lagos, Nigeria",        "lat": 6.45,   "lon": 3.4,     "elevation": 2},
             ]
 
+        # Only one thread may train at a time.  If another thread already holds
+        # the lock (i.e. training is already in progress), skip rather than
+        # stacking a second concurrent training run on top.
+        if not self._training_lock.acquire(blocking=False):
+            logger.info("Training already in progress on another thread — skipping duplicate call")
+            return {}
+
         try:
             from processing.real_data_trainer import RealDataTrainer
             trainer = RealDataTrainer()
@@ -293,13 +305,15 @@ class FloodPredictor:
                 result["data_source"] = "real_glofas_discharge_ground_truth"
                 result["regions_used"] = len(regions)
                 return result
-            else:
-                logger.warning("Only got %d real samples. Falling back to synthetic.", len(real_data))
+
+            logger.warning("Only got %d real samples. Falling back to synthetic.", len(real_data))
+            return self.train(self._generate_synthetic_data(1500))
         except Exception as e:
             logger.error("Failed to train on real data: %s. Falling back to synthetic.", e)
-
-        # Fallback to synthetic
-        return self.train(self._generate_synthetic_data(1500))
+            return self.train(self._generate_synthetic_data(1500))
+        finally:
+            # Always release the lock, regardless of which return path was taken.
+            self._training_lock.release()
 
     def train(self, training_data: list[dict]) -> dict:
         """
@@ -458,8 +472,22 @@ class FloodPredictor:
             FloodPrediction with risk forecast
         """
         if not self.is_trained:
+            # If the lock is free, train now (e.g. synthetic fast-path).
+            # If another thread is already training, wait briefly then use
+            # synthetic training rather than blocking the entire request.
             logger.info("Model not trained. Attempting training with real data...")
-            self.train_on_real_data()
+            acquired = self._training_lock.acquire(blocking=True, timeout=5)
+            if acquired:
+                self._training_lock.release()
+                if not self.is_trained:
+                    # We're the first — trigger full training (background thread
+                    # may have beaten us; re-check is_trained after acquiring)
+                    self.train_on_real_data()
+            else:
+                # Training is taking too long — bootstrap immediately with
+                # synthetic data so this request returns a result.
+                logger.warning("Training lock timeout — bootstrapping with synthetic data")
+                self.train(self._generate_synthetic_data(500))
 
         # Auto-enrich with model_hub data when lat/lon are available.
         # This ensures ALL prediction paths (active regions + ad-hoc) get
@@ -681,7 +709,14 @@ class FloodPredictor:
           - Data source proof (weather-only inputs)
         """
         if not self.is_trained:
-            self.train_on_real_data()
+            acquired = self._training_lock.acquire(blocking=True, timeout=5)
+            if acquired:
+                self._training_lock.release()
+                if not self.is_trained:
+                    self.train_on_real_data()
+            else:
+                logger.warning("Training lock timeout in explain_prediction — bootstrapping with synthetic data")
+                self.train(self._generate_synthetic_data(500))
 
         # Auto-enrich with model_hub data when lat/lon are available
         if external_factors and "_lat" in external_factors and "_lon" in external_factors:
@@ -696,10 +731,23 @@ class FloodPredictor:
         features = self._extract_features(flood_history, external_factors)
         features_scaled = self.scaler.transform(features)
 
-        # Get prediction
-        pred_class = self.model.predict(features_scaled)[0]
-        pred_proba = self.model.predict_proba(features_scaled)[0]
+        # Use the SAME ensemble blend as predict() so probabilities are consistent
+        primary_proba = self.model.predict_proba(features_scaled)[0]
+        if self._lgbm_model is not None:
+            try:
+                lgbm_proba = self._lgbm_model.predict_proba(features_scaled)[0]
+                if len(lgbm_proba) == len(primary_proba) == 4:
+                    pred_proba = 0.55 * primary_proba + 0.45 * lgbm_proba
+                else:
+                    pred_proba = primary_proba
+            except Exception:
+                pred_proba = primary_proba
+        else:
+            pred_proba = primary_proba
+
+        pred_class = int(np.argmax(pred_proba))
         predicted_level = self.risk_labels[pred_class]
+
         # flood_probability = P(HIGH) + P(CRITICAL) — probability of actual flood event
         high_idx = self.risk_labels.index("HIGH") if "HIGH" in self.risk_labels else 2
         crit_idx = self.risk_labels.index("CRITICAL") if "CRITICAL" in self.risk_labels else 3
@@ -764,7 +812,11 @@ class FloodPredictor:
                 "Features: precipitation (7d, 30d, max daily, anomaly), "
                 "soil moisture, temperature, elevation, season, historical flood trends."
             ),
-            "model_version": "gbm_v2",
+            "model_version": (
+                "ensemble_xgb_lgbm_v1" if (_HAS_XGB and self._lgbm_model is not None)
+                else "xgb_v1" if _HAS_XGB
+                else "gbm_v2"
+            ),
         }
 
     def _describe_feature_influence(self, feature: str, value: float, predicted_level: str) -> str:
@@ -962,52 +1014,54 @@ class FloodPredictor:
             anomaly ────┤
             season ─────┘
         """
-        np.random.seed(42)
+        # Use a local RandomState so we never mutate numpy's global random seed,
+        # which would cause subtle non-determinism in other parts of the code.
+        rng = np.random.RandomState(42)
         data = []
 
         for _ in range(n_samples):
             # ── Generate correlated precipitation regime ─────────────────────
-            regime = np.random.choice(
+            regime = rng.choice(
                 ["dry", "moderate", "wet", "extreme"],
                 p=[0.25, 0.35, 0.25, 0.15],
             )
             if regime == "dry":
-                precip_7d = np.random.uniform(0, 20)
-                soil_moisture = np.random.uniform(0.05, 0.20)
+                precip_7d = rng.uniform(0, 20)
+                soil_moisture = rng.uniform(0.05, 0.20)
             elif regime == "moderate":
-                precip_7d = np.random.uniform(15, 70)
-                soil_moisture = np.random.uniform(0.15, 0.35)
+                precip_7d = rng.uniform(15, 70)
+                soil_moisture = rng.uniform(0.15, 0.35)
             elif regime == "wet":
-                precip_7d = np.random.uniform(50, 180)
-                soil_moisture = np.random.uniform(0.30, 0.50)
+                precip_7d = rng.uniform(50, 180)
+                soil_moisture = rng.uniform(0.30, 0.50)
             else:  # extreme
-                precip_7d = np.random.uniform(120, 500)
-                soil_moisture = np.random.uniform(0.40, 0.60)
+                precip_7d = rng.uniform(120, 500)
+                soil_moisture = rng.uniform(0.40, 0.60)
 
             # ── Derive correlated features ───────────────────────────────────
-            precip_30d = precip_7d * np.random.uniform(2.5, 5.0)
-            max_daily_rain = precip_7d * np.random.uniform(0.20, 0.65)
+            precip_30d = precip_7d * rng.uniform(2.5, 5.0)
+            max_daily_rain = precip_7d * rng.uniform(0.20, 0.65)
             avg_daily_30d = precip_30d / 30.0
             avg_daily_7d = precip_7d / 7.0
             precip_anomaly = (avg_daily_7d - avg_daily_30d) / max(avg_daily_30d, 0.1)
 
             # Elevation: mix of low-lying, moderate, and high
-            elevation = float(np.random.choice([
-                np.random.uniform(0, 20),      # coastal / very low
-                np.random.uniform(20, 100),     # low-moderate
-                np.random.uniform(100, 500),    # inland / high
+            elevation = float(rng.choice([
+                rng.uniform(0, 20),      # coastal / very low
+                rng.uniform(20, 100),    # low-moderate
+                rng.uniform(100, 500),   # inland / high
             ], p=[0.30, 0.40, 0.30]))
 
-            month = np.random.randint(1, 13)
-            temperature = np.random.uniform(15, 42)
+            month = rng.randint(1, 13)
+            temperature = rng.uniform(15, 42)
             monsoon = month in [6, 7, 8, 9]
             seasonal_factor = 1.5 if monsoon else 1.0
 
             # Historical flood % — correlated with current conditions
             if regime in ["wet", "extreme"]:
-                base_flood = np.random.beta(3, 5)     # mean ~0.375
+                base_flood = rng.beta(3, 5)     # mean ~0.375
             else:
-                base_flood = np.random.beta(1.5, 12)   # mean ~0.11
+                base_flood = rng.beta(1.5, 12)  # mean ~0.11
 
             # ── LABEL: determined by the SAME features the model will see ────
             risk_score = 0.0
@@ -1020,7 +1074,7 @@ class FloodPredictor:
             risk_score += min(1.0, max_daily_rain / 100.0) * 0.10    # intensity
 
             risk_score *= seasonal_factor
-            risk_score += np.random.normal(0, 0.04)   # noise
+            risk_score += rng.normal(0, 0.04)   # noise
             risk_score = max(0.0, risk_score)
 
             if risk_score > 0.55:
@@ -1034,7 +1088,7 @@ class FloodPredictor:
 
             # ── Build sample ─────────────────────────────────────────────────
             history = [
-                {"flood_percentage": max(0, base_flood + np.random.normal(0, 0.02))}
+                {"flood_percentage": max(0, base_flood + rng.normal(0, 0.02))}
                 for _ in range(5)
             ]
 
