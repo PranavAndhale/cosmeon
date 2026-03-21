@@ -97,6 +97,29 @@ class ValidationResult:
         }
 
 
+def _data_snapshot(features: dict, discharge: float, anomaly: float, mean_discharge: float) -> str:
+    """
+    Always-present data snapshot: shows the actual numbers behind both assessments
+    so the panel is never left with generic text and no quantitative backing.
+    """
+    precip_7d  = features.get("precip_7d", features.get("rainfall_mm", 0))
+    precip_30d = features.get("precip_30d", 0)
+    soil       = features.get("soil_moisture", 0)
+    elev       = features.get("elevation_m", features.get("elevation", 0))
+    month      = int(features.get("month", 0))
+    anomaly_precip = features.get("precip_anomaly", 0)
+
+    discharge_ratio = discharge / max(mean_discharge, 0.01)
+
+    return (
+        f"DATA SNAPSHOT — ML inputs: rainfall 7d={precip_7d:.1f} mm, "
+        f"30d={precip_30d:.1f} mm, precip anomaly={anomaly_precip:+.2f}σ, "
+        f"soil moisture={soil:.3f}, elevation={elev:.0f} m, month={month}. "
+        f"GloFAS: discharge={discharge:.1f} m³/s "
+        f"(mean {mean_discharge:.1f} m³/s, ratio {discharge_ratio:.2f}×, anomaly {anomaly:+.2f}σ)."
+    )
+
+
 def generate_difference_analysis(
     our_level: str,
     our_feature_values: dict,
@@ -150,6 +173,7 @@ def generate_difference_analysis(
                 "Both weather indicators (heavy rainfall, saturated soil) and "
                 "hydrological measurements (elevated discharge) confirm flood risk."
             )
+        reasons.append(_data_snapshot(our_feature_values, discharge_m3s, anomaly_sigma, mean_discharge))
 
     elif agreement and diff == 1:
         # Close agreement (within 1 level)
@@ -158,12 +182,13 @@ def generate_difference_analysis(
             f"These are within one risk level of each other, which is expected due to "
             f"different data sources and methodologies."
         )
-        reasons.extend(
-            _explain_one_level_difference(
-                our_level, glofas_level, our_feature_values,
-                discharge_m3s, anomaly_sigma, mean_discharge,
-            )
+        specific = _explain_one_level_difference(
+            our_level, glofas_level, our_feature_values,
+            discharge_m3s, anomaly_sigma, mean_discharge,
         )
+        reasons.extend(specific)
+        # Always add a data-values snapshot so the panel is never empty
+        reasons.append(_data_snapshot(our_feature_values, discharge_m3s, anomaly_sigma, mean_discharge))
 
     else:
         # Significant disagreement
@@ -178,6 +203,7 @@ def generate_difference_analysis(
                 our_feature_values, discharge_m3s, anomaly_sigma, mean_discharge,
             )
         )
+        reasons.append(_data_snapshot(our_feature_values, discharge_m3s, anomaly_sigma, mean_discharge))
 
     # Summary sentence
     if agreement and diff == 0:

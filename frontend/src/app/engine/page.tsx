@@ -1210,7 +1210,11 @@ export default function GeospatialEngine() {
                   onClick={async () => {
                     if (!selectedRegion || explainLoading) return;
                     setExplainLoading(true);
-                    const data = await fetchExplanation(selectedRegion.id);
+                    const data = await fetchExplanation(
+                      selectedRegion.id,
+                      prediction?.predicted_risk_level ?? undefined,
+                      prediction?.flood_probability ?? undefined,
+                    );
                     if (data && data.ml_prediction) setExplanation(data);
                     setExplainLoading(false);
                   }}
@@ -2100,7 +2104,12 @@ export default function GeospatialEngine() {
                         onClick={async () => {
                           if (!adHocLocation || explainLoading) return;
                           setExplainLoading(true);
-                          const data = await explainLocation(adHocLocation.lat, adHocLocation.lon);
+                          const data = await explainLocation(
+                            adHocLocation.lat,
+                            adHocLocation.lon,
+                            adHocData?.prediction?.predicted_risk_level ?? undefined,
+                            adHocData?.prediction?.flood_probability ?? undefined,
+                          );
                           if (data && data.ml_prediction) setAdHocExplanation(data);
                           setExplainLoading(false);
                         }}
