@@ -1100,20 +1100,14 @@ def get_nlg_summary(region_id: int):
         risk = db.get_latest_risk(region_id)
         risk_data = risk.to_dict() if risk else {"risk_level": "UNKNOWN", "flood_percentage": 0, "confidence_score": 0, "flood_area_km2": 0, "total_area_km2": 0}
 
-        # Prediction
+        # Prediction — use global TieredFloodPredictor (GloFAS v4 + ERA5, no training delay)
         prediction_data = None
         try:
-            from processing.predictor import FloodPredictor
-            predictor = FloodPredictor()
+            bbox = region.bbox
+            lat_c, lon_c = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
             history = db.get_risk_history(region_id, limit=10)
             hist_dicts = [h.to_dict() for h in history]
-            from processing.external_data import ExternalDataIntegrator
-            ext = ExternalDataIntegrator()
-            factors = ext.get_risk_factors(region.bbox)
-            f_dict = factors.to_dict()
-            f_dict["_lat"] = (region.bbox[1] + region.bbox[3]) / 2
-            f_dict["_lon"] = (region.bbox[0] + region.bbox[2]) / 2
-            pred = predictor.predict(hist_dicts, f_dict, region.name)
+            pred = predictor.predict(hist_dicts, {"_lat": lat_c, "_lon": lon_c}, region.name)
             prediction_data = pred.to_dict() if pred else None
         except Exception:
             pass
