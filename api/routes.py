@@ -585,8 +585,14 @@ def get_orb_assessment(region_id: int):
     return _compute_orb_assessment(lat, lon, region.name)
 
 
+class _OrbLocationRequest(BaseModel):
+    lat: float
+    lon: float
+    name: Optional[str] = None
+
+
 @app.post("/api/orb-assessment/location")
-def orb_assessment_location(body: LocationRequest):
+def orb_assessment_location(body: _OrbLocationRequest):
     """Orb-specific assessments for an ad-hoc lat/lon location."""
     return _compute_orb_assessment(
         body.lat, body.lon,
