@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation } from "@/lib/api";
 import { BarChart, Bar, LineChart, Line } from "recharts";
 
 // ─── Types ───
@@ -194,6 +194,9 @@ export default function GeospatialEngine() {
   const [compoundData, setCompoundData] = useState<any>(null);
   const [compoundLoading, setCompoundLoading] = useState(false);
   const [showCompound, setShowCompound] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [orbAssessment, setOrbAssessment] = useState<any>(null);
+  const [orbAssessmentLoading, setOrbAssessmentLoading] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [financialData, setFinancialData] = useState<any>(null);
   const [financialLoading, setFinancialLoading] = useState(false);
@@ -439,6 +442,25 @@ export default function GeospatialEngine() {
       if (d?.trend?.length) setRegionTrendData(d);
     });
   }, [selectedRegion]);
+
+  // ── Fetch orb-specific assessment when switching to infra / veg orbs ──
+  useEffect(() => {
+    setOrbAssessment(null);
+    if (activeOrb === 'flood') return;
+    const doFetch = async () => {
+      setOrbAssessmentLoading(true);
+      let data = null;
+      if (selectedRegion) {
+        data = await fetchOrbAssessment(selectedRegion.id);
+      } else if (adHocLocation) {
+        data = await orbAssessmentLocation(adHocLocation.lat, adHocLocation.lon, adHocLocation.name);
+      }
+      setOrbAssessment(data);
+      setOrbAssessmentLoading(false);
+    };
+    doFetch();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrb, selectedRegion?.id, adHocLocation?.lat]);
 
   // ── Load Initial Data ──
   useEffect(() => {
@@ -918,11 +940,11 @@ export default function GeospatialEngine() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     {latestRisk ? (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(latestRisk.risk_level) }}>
+                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
                         <AlertTriangle size={16} />
-                        {latestRisk.risk_level} RISK
+                        {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level} RISK
                         <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
-                          {latestRisk.change_type}
+                          {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : latestRisk.change_type}
                         </span>
                       </span>
                     ) : (
@@ -975,8 +997,30 @@ export default function GeospatialEngine() {
                   <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                    <span style={{ color: riskColor(latestRisk.risk_level) }}>{((latestRisk.flood_percentage) * 100).toFixed(1)}%</span>
+                    {orbAssessmentLoading && activeOrb !== 'flood' ? (
+                      <span className="text-gray-500 text-[13px]">loading…</span>
+                    ) : (
+                      <span style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
+                        {activeOrb === 'infra' && orbAssessment?.infra
+                          ? `${(orbAssessment.infra.exposure_score * 100).toFixed(1)}%`
+                          : activeOrb === 'veg' && orbAssessment?.veg
+                          ? `${(orbAssessment.veg.stress_index * 100).toFixed(1)}%`
+                          : `${((latestRisk.flood_percentage) * 100).toFixed(1)}%`}
+                      </span>
+                    )}
                   </div>
+                  {activeOrb === 'infra' && orbAssessment?.infra && (
+                    <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
+                      <span className="text-gray-500">Soil Saturation</span>
+                      <span className="text-orange-400">{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                  {activeOrb === 'veg' && orbAssessment?.veg && (
+                    <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
+                      <span className="text-gray-500">ET₀ / Precip</span>
+                      <span className="text-green-400">{orbAssessment.veg.et0_mm_day} / {orbAssessment.veg.precip_mm_day} mm·d⁻¹</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Total Monitored Area</span>
                     <span className="text-white">{(latestRisk.total_area_km2).toFixed(0)} km²</span>
@@ -989,12 +1033,24 @@ export default function GeospatialEngine() {
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Data Source</span>
-                    <span className="text-gray-400">{activeSource}</span>
+                    <span className="text-gray-400 text-right max-w-[60%] truncate" title={activeOrb === 'infra' ? orbAssessment?.infra?.source : activeOrb === 'veg' ? orbAssessment?.veg?.source : activeSource}>
+                      {activeOrb === 'infra' && orbAssessment?.infra ? 'ERA5 + GloFAS + World Bank' : activeOrb === 'veg' && orbAssessment?.veg ? 'FAO-56 ET₀ (Open-Meteo)' : activeSource}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono">
                     <span className="text-gray-300">Last Analyzed</span>
                     <span className="text-gray-400">{latestRisk.timestamp ? new Date(latestRisk.timestamp).toLocaleDateString() : 'N/A'}</span>
                   </div>
+                  {(activeOrb === 'infra' && orbAssessment?.infra?.description) && (
+                    <div className="pt-2 border-t border-white/5">
+                      <span className="text-[11px] text-gray-600 font-mono">{orbAssessment.infra.description}</span>
+                    </div>
+                  )}
+                  {(activeOrb === 'veg' && orbAssessment?.veg?.condition) && (
+                    <div className="pt-2 border-t border-white/5">
+                      <span className="text-[11px] text-gray-600 font-mono">{orbAssessment.veg.condition}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Prediction Block */}
@@ -1654,12 +1710,12 @@ export default function GeospatialEngine() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     {adHocData ? (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(adHocData.detection?.detected_risk_level || 'LOW') }}>
+                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW') : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW') : adHocData.detection?.detected_risk_level || 'LOW') }}>
                         <AlertTriangle size={16} />
-                        {adHocData.detection?.detected_risk_level || 'ANALYZING'} RISK
+                        {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'ANALYZING') : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'ANALYZING') : (adHocData.detection?.detected_risk_level || 'ANALYZING')} RISK
                         {adHocData.detection?.change_type && (
                           <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '40', backgroundColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '20' }}>
-                            LIVE_DETECTION
+                            {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : 'LIVE_DETECTION'}
                           </span>
                         )}
                       </span>
@@ -1708,8 +1764,30 @@ export default function GeospatialEngine() {
                           <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
                           <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                             <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                            <span style={{ color: riskColor(det.detected_risk_level) }}>{det.flood_probability ? (det.flood_probability * 100).toFixed(1) : '0.0'}%</span>
+                            {orbAssessmentLoading && activeOrb !== 'flood' ? (
+                              <span className="text-gray-500 text-[13px]">loading…</span>
+                            ) : (
+                              <span style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? det.detected_risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? det.detected_risk_level) : det.detected_risk_level) }}>
+                                {activeOrb === 'infra' && orbAssessment?.infra
+                                  ? `${(orbAssessment.infra.exposure_score * 100).toFixed(1)}%`
+                                  : activeOrb === 'veg' && orbAssessment?.veg
+                                  ? `${(orbAssessment.veg.stress_index * 100).toFixed(1)}%`
+                                  : `${det.flood_probability ? (det.flood_probability * 100).toFixed(1) : '0.0'}%`}
+                              </span>
+                            )}
                           </div>
+                          {activeOrb === 'infra' && orbAssessment?.infra && (
+                            <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
+                              <span className="text-gray-500">Soil Saturation</span>
+                              <span className="text-orange-400">{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                            </div>
+                          )}
+                          {activeOrb === 'veg' && orbAssessment?.veg && (
+                            <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
+                              <span className="text-gray-500">ET₀ / Precip</span>
+                              <span className="text-green-400">{orbAssessment.veg.et0_mm_day} / {orbAssessment.veg.precip_mm_day} mm·d⁻¹</span>
+                            </div>
+                          )}
                           <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                             <span className="text-gray-300">River Discharge</span>
                             <span className="text-cyan-400">{det.river_discharge_m3s} m³/s</span>
@@ -1722,13 +1800,25 @@ export default function GeospatialEngine() {
                           </div>
                           <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                             <span className="text-gray-300">Data Source</span>
-                            <span className="text-gray-400">{activeSource}</span>
+                            <span className="text-gray-400 text-right max-w-[60%] truncate">
+                              {activeOrb === 'infra' && orbAssessment?.infra ? 'ERA5 + GloFAS + World Bank' : activeOrb === 'veg' && orbAssessment?.veg ? 'FAO-56 ET₀ (Open-Meteo)' : activeSource}
+                            </span>
                           </div>
                           <div className="flex justify-between items-center text-[14px] font-mono">
                             <span className="text-gray-300">Last Analyzed</span>
                             <span className="text-gray-400">{det.timestamp ? new Date(det.timestamp).toLocaleDateString() : 'Just now'}</span>
                           </div>
-                          {det.data_sources && (
+                          {(activeOrb === 'infra' && orbAssessment?.infra?.description) && (
+                            <div className="pt-2 border-t border-white/5">
+                              <span className={`text-[11px] text-gray-600 ${textMono}`}>{orbAssessment.infra.description}</span>
+                            </div>
+                          )}
+                          {(activeOrb === 'veg' && orbAssessment?.veg?.condition) && (
+                            <div className="pt-2 border-t border-white/5">
+                              <span className={`text-[11px] text-gray-600 ${textMono}`}>{orbAssessment.veg.condition}</span>
+                            </div>
+                          )}
+                          {activeOrb === 'flood' && det.data_sources && (
                             <div className="pt-2 border-t border-white/5">
                               <span className={`text-[11px] text-gray-600 ${textMono}`}>
                                 Live: {det.data_sources.join(' · ')}
