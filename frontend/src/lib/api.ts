@@ -74,8 +74,16 @@ export async function fetchAlerts(limit = 50) {
     return safeFetch(`${API}/alerts?limit=${limit}`);
 }
 
-export async function fetchExplanation(regionId: number) {
-    return safeFetch(`${API}/explain/${regionId}`);
+export async function fetchExplanation(
+    regionId: number,
+    knownMlLevel?: string,
+    knownMlProbability?: number,
+) {
+    const params = new URLSearchParams();
+    if (knownMlLevel) params.set('known_ml_level', knownMlLevel);
+    if (knownMlProbability !== undefined) params.set('known_ml_probability', String(knownMlProbability));
+    const qs = params.toString();
+    return safeFetch(`${API}/explain/${regionId}${qs ? `?${qs}` : ''}`);
 }
 
 export function getReportDownloadUrl(regionId: number) {
@@ -97,8 +105,16 @@ export async function analyzeLocation(lat: number, lon: number, name?: string) {
     }
 }
 
-export async function explainLocation(lat: number, lon: number) {
-    return safeFetch(`${API}/explain/location?lat=${lat}&lon=${lon}`);
+export async function explainLocation(
+    lat: number,
+    lon: number,
+    knownMlLevel?: string,
+    knownMlProbability?: number,
+) {
+    const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+    if (knownMlLevel) params.set('known_ml_level', knownMlLevel);
+    if (knownMlProbability !== undefined) params.set('known_ml_probability', String(knownMlProbability));
+    return safeFetch(`${API}/explain/location?${params}`);
 }
 
 // --- Predictive Forecasting ---

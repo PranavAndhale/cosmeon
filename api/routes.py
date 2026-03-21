@@ -241,9 +241,19 @@ def predict_risk(region_id: int):
 # --- Explainability ---
 
 @app.get("/api/explain/location")
-def explain_location(lat: float = Query(...), lon: float = Query(...)):
+def explain_location(
+    lat: float = Query(...),
+    lon: float = Query(...),
+    known_ml_level: Optional[str] = Query(None),
+    known_ml_probability: Optional[float] = Query(None),
+):
     """
     Full ML vs GloFAS explainability for any arbitrary coordinates.
+
+    known_ml_level / known_ml_probability — optional: when the frontend already
+    has an ML prediction from a prior /analyze call, pass it here so the
+    comparison is against the level the user is actually seeing, not a freshly
+    re-computed value that may differ due to live API variability.
     """
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
@@ -268,9 +278,13 @@ def explain_location(lat: float = Query(...), lon: float = Query(...)):
     live_fetcher = LiveFloodDataFetcher()
     discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
 
-    # 4. Generate difference analysis
+    # 4. Generate difference analysis.
+    # If the caller supplied a known ML level (from a prior /analyze call), use
+    # that for the comparison so the panel is consistent with what the user sees.
+    compare_ml_level = known_ml_level or ml_result["risk_level"]
+    compare_ml_prob  = known_ml_probability if known_ml_probability is not None else ml_result["probability"]
     comparison = generate_difference_analysis(
-        our_level=ml_result["risk_level"],
+        our_level=compare_ml_level,
         our_feature_values=ml_result["feature_values"],
         our_explanation=ml_result["explanation"],
         glofas_level=discharge.flood_risk_level,
@@ -282,8 +296,8 @@ def explain_location(lat: float = Query(...), lon: float = Query(...)):
     return {
         "region": {"id": -1, "name": name, "bbox": [lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5]},
         "ml_prediction": {
-            "risk_level": ml_result["risk_level"],
-            "probability": ml_result["probability"],
+            "risk_level": compare_ml_level,
+            "probability": round(compare_ml_prob, 4),
             "confidence": ml_result["confidence"],
             "class_probabilities": ml_result["class_probabilities"],
             "feature_values": ml_result["feature_values"],
@@ -332,7 +346,11 @@ def explain_location(lat: float = Query(...), lon: float = Query(...)):
 
 
 @app.get("/api/explain/{region_id}")
-def explain_prediction(region_id: int):
+def explain_prediction(
+    region_id: int,
+    known_ml_level: Optional[str] = Query(None),
+    known_ml_probability: Optional[float] = Query(None),
+):
     """
     Full prediction explainability for a region.
 
@@ -376,9 +394,13 @@ def explain_prediction(region_id: int):
     lon = (region.bbox[0] + region.bbox[2]) / 2
     discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
 
-    # 5. Generate difference analysis
+    # 5. Generate difference analysis.
+    # Use caller-supplied ML level when available so the comparison is against
+    # exactly what the user is seeing in the main prediction panel.
+    compare_ml_level = known_ml_level or ml_result["risk_level"]
+    compare_ml_prob  = known_ml_probability if known_ml_probability is not None else ml_result["probability"]
     comparison = generate_difference_analysis(
-        our_level=ml_result["risk_level"],
+        our_level=compare_ml_level,
         our_feature_values=ml_result["feature_values"],
         our_explanation=ml_result["explanation"],
         glofas_level=discharge.flood_risk_level,
@@ -394,8 +416,8 @@ def explain_prediction(region_id: int):
             "bbox": region.bbox,
         },
         "ml_prediction": {
-            "risk_level": ml_result["risk_level"],
-            "probability": ml_result["probability"],
+            "risk_level": compare_ml_level,
+            "probability": round(compare_ml_prob, 4),
             "confidence": ml_result["confidence"],
             "class_probabilities": ml_result["class_probabilities"],
             "feature_values": ml_result["feature_values"],
