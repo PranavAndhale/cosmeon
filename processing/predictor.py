@@ -661,6 +661,13 @@ class FloodPredictor:
             factors_dict["discharge_anomaly"] = float(anomaly)
             factors_dict["discharge_ratio"] = float(current / max(mean, 0.01))
             factors_dict["forecast_max_7d"] = float(max(forecast)) if forecast else 0.0
+            # Keep risk_multiplier boost as safety net — ensures high-discharge events
+            # are properly weighted even before the model fully learns from real data.
+            if anomaly > 1.5:
+                factors_dict["risk_multiplier"] = max(
+                    factors_dict.get("risk_multiplier", 1.0),
+                    1.0 + anomaly * 0.3,
+                )
 
         except Exception as e:
             logger.warning("Model hub enrichment failed (using basic features): %s", e)
@@ -1127,17 +1134,18 @@ class FloodPredictor:
             forecast_max_val = discharge_current_val * rng.uniform(0.9, 1.5 if regime in ["wet", "extreme"] else 1.1)
 
             # ── LABEL: determined by the SAME features the model will see ────
+            # Original weather weights preserved — discharge adds ON TOP (additive)
             risk_score = 0.0
-            risk_score += min(1.0, precip_7d / 200.0) * 0.25          # precip
-            risk_score += min(1.0, soil_moisture / 0.50) * 0.15       # soil amplifier
-            risk_score += max(0.0, 1.0 - elevation / 200.0) * 0.10   # low elev risk
-            risk_score += max(0.0, min(1.0, precip_anomaly / 2.0)) * 0.08
-            risk_score += (0.08 if monsoon else 0.0)                  # seasonal
-            risk_score += min(0.5, base_flood) * 0.04                 # history
-            risk_score += min(1.0, max_daily_rain / 100.0) * 0.08    # intensity
-            # Discharge features directly contribute
-            risk_score += max(0.0, min(1.0, discharge_anomaly_val / 3.0)) * 0.20
-            risk_score += max(0.0, min(1.0, (discharge_ratio_val - 1.0) / 3.0)) * 0.10
+            risk_score += min(1.0, precip_7d / 200.0) * 0.30          # precip dominant
+            risk_score += min(1.0, soil_moisture / 0.50) * 0.20       # soil amplifier
+            risk_score += max(0.0, 1.0 - elevation / 200.0) * 0.15   # low elev risk
+            risk_score += max(0.0, min(1.0, precip_anomaly / 2.0)) * 0.10
+            risk_score += (0.10 if monsoon else 0.0)                  # seasonal
+            risk_score += min(0.5, base_flood) * 0.05                 # history
+            risk_score += min(1.0, max_daily_rain / 100.0) * 0.10    # intensity
+            # Discharge features add extra signal on top (only positive contribution)
+            risk_score += max(0.0, min(1.0, discharge_anomaly_val / 3.0)) * 0.15
+            risk_score += max(0.0, min(1.0, (discharge_ratio_val - 1.0) / 3.0)) * 0.08
 
             risk_score *= seasonal_factor
             risk_score += rng.normal(0, 0.04)   # noise
