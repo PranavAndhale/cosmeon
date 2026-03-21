@@ -201,7 +201,7 @@ This project is deployed on **[Render](https://render.com)** using Docker.
 
 Every push to `main` triggers an automatic redeploy on Render.
 
-The **landing page** is also deployed as a standalone service at a separate Render URL via the [`cosmeon-landing`](https://github.com/PranavAndhale/cosmeon-landing) repository — an Express static server serving the same Webflow-exported HTML.
+The **landing page** is also deployed as a standalone service at a separate Render URL via the [`cosmeon-landing`](https://github.com/PranavAndhale/cosmeon-landing)(wait for sometime if the render keeps cycling, it will load) repository — an Express static server serving the same Webflow-exported HTML.
 
 ---
 
