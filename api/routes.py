@@ -2319,6 +2319,11 @@ def serve_frontend(full_path: str):
     if file_path.is_file():
         return FileResponse(str(file_path))
 
+    # Next.js export generates /engine → engine.html (not engine/index.html)
+    html_file = static_dir / (full_path + ".html")
+    if html_file.is_file():
+        return FileResponse(str(html_file))
+
     # Serve index.html inside directory (e.g. /about → /about/index.html)
     index_in_dir = static_dir / full_path / "index.html"
     if index_in_dir.is_file():
