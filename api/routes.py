@@ -34,7 +34,7 @@ from fastapi.staticfiles import StaticFiles
 
 from database.db import DatabaseManager
 from processing.external_data import ExternalDataIntegrator
-from processing.predictor import FloodPredictor
+from processing.tiered_predictor import TieredFloodPredictor
 
 logger = logging.getLogger("cosmeon.api")
 
@@ -55,7 +55,7 @@ app.add_middleware(
 
 db = DatabaseManager()
 external = ExternalDataIntegrator()
-predictor = FloodPredictor()
+predictor = TieredFloodPredictor()
 
 # ─── Static frontend directory ───
 # In production (Render), the Next.js static export lives in /app/static
@@ -287,24 +287,22 @@ def explain_location(
             "model_inputs_source": ml_result["model_inputs_source"],
         },
         "model_info": {
-            "features_count": 17,
-            "includes_discharge": True,
+            "architecture": "tiered_pre_trained",
+            "training_required": False,
             "description": (
-                "17 features: weather (precipitation 7d/30d/max daily/anomaly, soil moisture, "
-                "temperature), terrain (elevation, season, risk multiplier), historical flood "
-                "trends, and GloFAS river discharge (current, anomaly, ratio, 7-day forecast)."
+                "Compound risk assessment using tiered pre-trained model outputs directly. "
+                "Primary signal: GloFAS v4 river discharge (T1: operational forecast → T4: ERA5 surrogate). "
+                "Compound signals: ERA5 reanalysis precipitation anomaly, ERA5/ECMWF IFS soil moisture. "
+                "No custom training — predictions backed by world-class established models."
             ),
-            "feature_data_sources": {
-                "Open-Meteo Weather API": [
-                    "precip_7d", "precip_30d", "max_daily_rain_7d",
-                    "precip_anomaly", "soil_moisture", "temperature", "rainfall_mm",
+            "data_sources": {
+                "GloFAS v4 (primary)": [
+                    "flood_risk_level", "discharge_anomaly_sigma",
+                    "discharge_current_m3s", "discharge_ratio", "forecast_max_7d_m3s",
                 ],
-                "Open-Meteo Elevation API": ["elevation_m"],
-                "Calendar / Seasonal": ["month", "risk_multiplier"],
-                "Historical Database": ["mean_flood_pct", "max_flood_pct", "trend"],
-                "GloFAS via Open-Meteo": [
-                    "discharge_current", "discharge_anomaly", "discharge_ratio", "forecast_max_7d",
-                ],
+                "ERA5 reanalysis (compound)": ["precip_7d_mm", "precip_anomaly", "precip_30d_mm"],
+                "ERA5 / ECMWF IFS (compound)": ["soil_saturation"],
+                "Historical Database (context)": ["mean_flood_pct"],
             },
         },
     }
@@ -365,24 +363,22 @@ def explain_prediction(
             "model_inputs_source": ml_result["model_inputs_source"],
         },
         "model_info": {
-            "features_count": 17,
-            "includes_discharge": True,
+            "architecture": "tiered_pre_trained",
+            "training_required": False,
             "description": (
-                "17 features: weather (precipitation 7d/30d/max daily/anomaly, soil moisture, "
-                "temperature), terrain (elevation, season, risk multiplier), historical flood "
-                "trends, and GloFAS river discharge (current, anomaly, ratio, 7-day forecast)."
+                "Compound risk assessment using tiered pre-trained model outputs directly. "
+                "Primary signal: GloFAS v4 river discharge (T1: operational forecast → T4: ERA5 surrogate). "
+                "Compound signals: ERA5 reanalysis precipitation anomaly, ERA5/ECMWF IFS soil moisture. "
+                "No custom training — predictions backed by world-class established models."
             ),
-            "feature_data_sources": {
-                "Open-Meteo Weather API": [
-                    "precip_7d", "precip_30d", "max_daily_rain_7d",
-                    "precip_anomaly", "soil_moisture", "temperature", "rainfall_mm",
+            "data_sources": {
+                "GloFAS v4 (primary)": [
+                    "flood_risk_level", "discharge_anomaly_sigma",
+                    "discharge_current_m3s", "discharge_ratio", "forecast_max_7d_m3s",
                 ],
-                "Open-Meteo Elevation API": ["elevation_m"],
-                "Calendar / Seasonal": ["month", "risk_multiplier"],
-                "Historical Database": ["mean_flood_pct", "max_flood_pct", "trend"],
-                "GloFAS via Open-Meteo": [
-                    "discharge_current", "discharge_anomaly", "discharge_ratio", "forecast_max_7d",
-                ],
+                "ERA5 reanalysis (compound)": ["precip_7d_mm", "precip_anomaly", "precip_30d_mm"],
+                "ERA5 / ECMWF IFS (compound)": ["soil_saturation"],
+                "Historical Database (context)": ["mean_flood_pct"],
             },
         },
     }
