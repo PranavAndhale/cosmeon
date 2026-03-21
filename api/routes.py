@@ -476,6 +476,124 @@ def get_river_discharge(region_id: int):
     }
 
 
+# --- Orb-specific Assessments (Infrastructure + Vegetation) ---
+
+def _compute_orb_assessment(lat: float, lon: float, name: str) -> dict:
+    """
+    Compute infra exposure and vegetation stress from tiered model_hub sources.
+
+    Infrastructure: soil saturation (ERA5/ECMWF IFS) × GloFAS flood level × World Bank pop density
+    Vegetation:     FAO-56 Penman-Monteith ET0 water-balance (Open-Meteo best_match → ECMWF → ERA5)
+    """
+    from processing.model_hub import (
+        get_vegetation_stress, get_soil_moisture,
+        get_economic_data, get_river_discharge,
+    )
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_soil      = pool.submit(get_soil_moisture, lat, lon)
+        f_veg       = pool.submit(get_vegetation_stress, lat, lon)
+        f_econ      = pool.submit(get_economic_data, lat, lon, name)
+        f_discharge = pool.submit(get_river_discharge, lat, lon, 7)
+        soil      = f_soil.result()
+        veg       = f_veg.result()
+        econ      = f_econ.result()
+        discharge = f_discharge.result()
+
+    # ── Infrastructure Exposure ──────────────────────────────────────────────
+    _GLOFAS_PROB = {
+        "LOW": 0.07, "MEDIUM": 0.28, "HIGH": 0.62, "CRITICAL": 0.87, "UNKNOWN": 0.14,
+    }
+    flood_prob  = _GLOFAS_PROB.get(discharge.get("flood_risk_level", "UNKNOWN"), 0.14)
+    soil_sat    = soil.get("saturation_fraction", 0.3)
+    pop_density = econ.get("pop_density_km2", 500.0)
+
+    # Pop factor: 1500 ppl/km² = fully exposed urban zone
+    pop_factor  = min(1.0, pop_density / 1500.0)
+    ground_risk = flood_prob * 0.55 + soil_sat * 0.45
+    exposure    = round(min(1.0, max(0.0, ground_risk * (0.75 + pop_factor * 0.25))), 3)
+
+    if   exposure >= 0.60: infra_risk = "CRITICAL"
+    elif exposure >= 0.40: infra_risk = "HIGH"
+    elif exposure >= 0.18: infra_risk = "MEDIUM"
+    else:                  infra_risk = "LOW"
+
+    infra_desc = (
+        f"{infra_risk.title()} infrastructure vulnerability: {soil_sat * 100:.0f}% soil saturation, "
+        f"{pop_density:.0f} ppl/km² population exposure, "
+        f"{discharge.get('flood_risk_level', 'UNKNOWN')} GloFAS river risk."
+    )
+
+    # ── Vegetation Assessment ────────────────────────────────────────────────
+    stress   = veg.get("stress_index", 0.3)
+    et0      = veg.get("et0_mm_day", 4.0)
+    precip   = veg.get("precip_mm_day", 3.0)
+    deficit  = round(et0 - precip, 2)
+
+    if   stress >= 0.70: veg_risk = "CRITICAL"
+    elif stress >= 0.50: veg_risk = "HIGH"
+    elif stress >= 0.25: veg_risk = "MEDIUM"
+    else:                veg_risk = "LOW"
+
+    if   deficit > 2.0: veg_condition = f"Significant water deficit ({deficit:.1f} mm/day) — vegetation drought stress"
+    elif deficit > 0:   veg_condition = f"Mild water deficit ({deficit:.1f} mm/day) — slight vegetation stress"
+    else:               veg_condition = f"Water surplus ({abs(deficit):.1f} mm/day) — vegetation well-watered"
+
+    return {
+        "name": name,
+        "infra": {
+            "risk_level":      infra_risk,
+            "exposure_score":  exposure,
+            "soil_saturation": round(soil_sat, 3),
+            "pop_density_km2": round(pop_density, 0),
+            "flood_factor":    round(flood_prob, 3),
+            "glofas_risk":     discharge.get("flood_risk_level", "UNKNOWN"),
+            "description":     infra_desc,
+            "source":          (
+                f"{soil.get('source', 'ERA5')} (T{soil.get('_tier', '?')}) + "
+                f"World Bank pop density (T{econ.get('_tier', '?')}) + "
+                f"GloFAS discharge (T{discharge.get('_tier', '?')})"
+            ),
+        },
+        "veg": {
+            "risk_level":    veg_risk,
+            "stress_index":  round(stress, 3),
+            "et0_mm_day":    round(et0, 2),
+            "precip_mm_day": round(precip, 2),
+            "deficit_mm_day": deficit,
+            "condition":     veg_condition,
+            "source":        f"{veg.get('source', 'FAO-56 ET0')} (T{veg.get('_tier', '?')})",
+        },
+    }
+
+
+@app.get("/api/orb-assessment/{region_id}")
+def get_orb_assessment(region_id: int):
+    """
+    Orb-specific risk assessments for the Infrastructure and Vegetation orbs.
+
+    Infrastructure uses: ERA5/ECMWF soil saturation + GloFAS discharge + World Bank population
+    Vegetation uses:     FAO-56 ET0 water-balance (Open-Meteo T1→T3)
+    """
+    region = db.get_region(region_id)
+    if not region:
+        raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
+    bbox = region.bbox
+    lat  = (bbox[1] + bbox[3]) / 2
+    lon  = (bbox[0] + bbox[2]) / 2
+    return _compute_orb_assessment(lat, lon, region.name)
+
+
+@app.post("/api/orb-assessment/location")
+def orb_assessment_location(body: LocationRequest):
+    """Orb-specific assessments for an ad-hoc lat/lon location."""
+    return _compute_orb_assessment(
+        body.lat, body.lon,
+        body.name or f"{body.lat:.2f},{body.lon:.2f}",
+    )
+
+
 # --- Live Automated Analysis ---
 
 from processing.live_analysis import LiveAnalysisEngine

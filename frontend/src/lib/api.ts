@@ -234,6 +234,26 @@ export async function compoundRiskLocation(lat: number, lon: number, name?: stri
     } catch { return null; }
 }
 
+// --- Orb-specific Assessment (Infra + Vegetation) ---
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchOrbAssessment(regionId: number): Promise<any> {
+    return safeFetch(`${API}/orb-assessment/${regionId}`);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function orbAssessmentLocation(lat: number, lon: number, name?: string): Promise<any> {
+    try {
+        const res = await fetch(`${API}/orb-assessment/location`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, name }),
+            cache: 'no-store',
+        });
+        if (!res.ok) return null;
+        return res.json();
+    } catch { return null; }
+}
+
 // --- Asset Scoring (Phase 3A) ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchAssetScores(regionId: number): Promise<any> {
