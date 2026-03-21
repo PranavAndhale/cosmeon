@@ -396,7 +396,7 @@ class LiveFloodDataFetcher:
     """Fetches real flood and weather data from Open-Meteo APIs."""
 
     def __init__(self):
-        self.timeout = 15
+        self.timeout = 30
         logger.info("LiveFloodDataFetcher initialized")
 
     # ── GloFAS River Discharge ──

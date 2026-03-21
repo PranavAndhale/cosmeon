@@ -65,7 +65,7 @@ class ExternalDataIntegrator:
                 "past_days": days,
                 "forecast_days": 0,
             }
-            response = requests.get(self.weather_api, params=params, timeout=10)
+            response = requests.get(self.weather_api, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
@@ -104,7 +104,7 @@ class ExternalDataIntegrator:
                 "latitude": ",".join(str(l) for l in lats),
                 "longitude": ",".join(str(l) for l in lons),
             }
-            response = requests.get(self.elevation_api, params=params, timeout=10)
+            response = requests.get(self.elevation_api, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
