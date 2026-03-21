@@ -612,7 +612,6 @@ class SchedulerConfigRequest(BaseModel):
 @app.on_event("startup")
 async def auto_analyze_on_startup():
     """Auto-analyze all regions on startup, pre-train ML model, and start scheduler."""
-    import asyncio
     import threading
     logger.info("=== AUTO-ANALYSIS: Running live detection on all regions ===")
 
@@ -629,32 +628,39 @@ async def auto_analyze_on_startup():
         except Exception as e:
             logger.error("Background ML training failed: %s", e)
 
-    async def run_analysis():
-        await asyncio.sleep(3)  # Wait for DB to be ready
+    def _startup_background():
+        """Run all blocking startup work in a background thread so the async
+        event loop stays free and Render's health check always responds."""
+        import time
+        time.sleep(3)  # Wait for DB to be ready
 
-        # Kick off ML model training in a separate OS thread so it doesn't
-        # block the async event loop or any incoming HTTP requests.
-        training_thread = threading.Thread(
-            target=_train_predictor_background, name="ml-predictor-trainer", daemon=True
-        )
-        training_thread.start()
+        # Pre-train ML model
+        _train_predictor_background()
 
-        all_regions = db.get_all_regions()
-        if all_regions:
-            regions_data = [
-                {"id": r.id, "name": r.name, "bbox": r.bbox}
-                for r in all_regions
-            ]
-            results = analysis_engine.analyze_all_regions(regions_data)
-            logger.info(
-                "Auto-analysis complete: %d regions analyzed, %d alerts generated",
-                len(results),
-                sum(1 for r in results if r.alert_triggered),
-            )
+        # Run initial region analysis (makes external ERA5 / GloFAS calls)
+        try:
+            all_regions = db.get_all_regions()
+            if all_regions:
+                regions_data = [
+                    {"id": r.id, "name": r.name, "bbox": r.bbox}
+                    for r in all_regions
+                ]
+                results = analysis_engine.analyze_all_regions(regions_data)
+                logger.info(
+                    "Auto-analysis complete: %d regions analyzed, %d alerts generated",
+                    len(results),
+                    sum(1 for r in results if r.alert_triggered),
+                )
+        except Exception as e:
+            logger.error("Startup region analysis failed: %s", e)
+
         # Start periodic scheduler after initial analysis
         periodic_scheduler.start(analysis_engine, db)
 
-    asyncio.create_task(run_analysis())
+    startup_thread = threading.Thread(
+        target=_startup_background, name="startup-worker", daemon=True
+    )
+    startup_thread.start()
 
 
 # ── Analyze Location (must come BEFORE /api/analyze/{region_id}) ──────────
