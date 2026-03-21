@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Map, { Marker, Popup, MapRef } from "react-map-gl/maplibre";
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
 import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
@@ -89,27 +89,10 @@ interface ExplainData {
     explanation: string;
     model_inputs_source: string;
   };
-  glofas_assessment: {
-    risk_level: string;
-    discharge_m3s: number;
-    anomaly_sigma: number;
-    mean_discharge_m3s: number;
-    explanation: string;
-  };
-  comparison: {
-    agreement: boolean;
-    agreement_score: number;
-    summary: string;
-    difference_reasons: string[];
-    our_methodology: string;
-    glofas_methodology: string;
-  };
-  independence_proof: {
-    model_uses: string;
-    model_does_not_use: string;
-    glofas_uses: string;
-    how_training_works: string;
-    verification: string;
+  model_info: {
+    features_count: number;
+    includes_discharge: boolean;
+    description: string;
     feature_data_sources: Record<string, string[]>;
   };
 }
@@ -241,7 +224,6 @@ export default function GeospatialEngine() {
   const [hoverInfo, setHoverInfo] = useState<Region | null>(null);
   const [playing, setPlaying] = useState(false);
   const [showLogs, setShowLogs] = useState(true);
-  const [comparisonMode, setComparisonMode] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
 
@@ -1037,50 +1019,7 @@ export default function GeospatialEngine() {
                 )}
 
 
-                {/* ── GloFAS Live Validation Panel ── */}
-                {validation && (
-                  <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: validation.validation.agreement ? '#22c55e30' : '#ef444430' }}>
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                      <Satellite size={12} className="text-emerald-400" /> Live Validation — GloFAS
-                    </span>
-
-                    {/* Agreement Badge */}
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[13px] font-bold px-2.5 py-1 rounded ${validation.validation.agreement ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
-                        {validation.validation.agreement ? '✓ ALIGNED' : '⚠ DIVERGENT'}
-                      </span>
-                      <span className="text-[13px] text-gray-500 font-mono">
-                        Score: {(validation.validation.agreement_score * 100).toFixed(0)}%
-                      </span>
-                    </div>
-
-                    {/* Comparison table */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] font-mono mt-1">
-                      <span className="text-gray-500">Our Prediction</span>
-                      <span style={{ color: riskColor(validation.validation.our_prediction) }} className="text-right font-bold">
-                        {validation.validation.our_prediction}
-                      </span>
-                      <span className="text-gray-500">GloFAS Risk</span>
-                      <span style={{ color: riskColor(validation.validation.glofas_risk_level) }} className="text-right font-bold">
-                        {validation.validation.glofas_risk_level}
-                      </span>
-                      <span className="text-gray-500">River Discharge</span>
-                      <span className="text-right text-cyan-400">
-                        {validation.validation.glofas_discharge_m3s.toFixed(1)} m³/s
-                      </span>
-                      <span className="text-gray-500">Discharge Anomaly</span>
-                      <span className={`text-right ${validation.validation.glofas_discharge_anomaly > 1.5 ? 'text-red-400' : validation.validation.glofas_discharge_anomaly > 0.8 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                        {validation.validation.glofas_discharge_anomaly > 0 ? '+' : ''}{validation.validation.glofas_discharge_anomaly.toFixed(2)}σ
-                      </span>
-                    </div>
-
-                    <div className="text-[12px] text-gray-600 font-mono mt-1">
-                      Source: {validation.validation.data_source}
-                    </div>
-                  </div>
-                )}
-
-                {/* ── ML vs GloFAS Explainability Panel ── */}
+                {/* ── Prediction Explainability Panel ── */}
                 <button
                   onClick={async () => {
                     if (!selectedRegion || explainLoading) return;
@@ -1101,88 +1040,25 @@ export default function GeospatialEngine() {
                       : 'border-violet-500/40 text-violet-300 bg-violet-500/10 hover:bg-violet-500/20'
                     }`}
                 >
-                  {explainLoading ? 'Analyzing live data...' : explanation ? '↻ Re-Analyze ML vs GloFAS' : 'Analyze: ML Prediction vs GloFAS'}
+                  {explainLoading ? 'Analyzing live data...' : explanation ? '↻ Refresh Explanation' : 'Explain Prediction'}
                 </button>
 
                 {explanation && (() => {
                   const ml = explanation.ml_prediction;
-                  const gf = explanation.glofas_assessment;
-                  const comp = explanation.comparison;
-                  const proof = explanation.independence_proof;
                   return (
                     <>
-                      {/* Side-by-side comparison */}
-                      <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
-                        <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
-                          ML Prediction vs GloFAS Ground Truth
-                        </span>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="bg-[#151A22] border border-violet-500/20 rounded-lg p-3 text-center">
-                            <div className={`text-[12px] text-gray-500 uppercase ${textMono} mb-1`}>Our ML Model</div>
-                            <span className="text-sm font-bold px-2 py-0.5 rounded"
-                              style={{ color: riskColor(ml.risk_level), backgroundColor: riskColor(ml.risk_level) + '20', border: `1px solid ${riskColor(ml.risk_level)}40` }}>
-                              {ml.risk_level}
-                            </span>
-                            <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>
-                              Prob: <b className="text-white">{(ml.probability * 100).toFixed(0)}%</b>
-                            </div>
-                            <div className={`text-[12px] text-violet-400/60 ${textMono} mt-1`}>Weather + Terrain</div>
-                          </div>
-                          <div className="bg-[#151A22] border border-cyan-500/20 rounded-lg p-3 text-center">
-                            <div className={`text-[12px] text-gray-500 uppercase ${textMono} mb-1`}>GloFAS Ground Truth</div>
-                            <span className="text-sm font-bold px-2 py-0.5 rounded"
-                              style={{ color: riskColor(gf.risk_level), backgroundColor: riskColor(gf.risk_level) + '20', border: `1px solid ${riskColor(gf.risk_level)}40` }}>
-                              {gf.risk_level}
-                            </span>
-                            <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>
-                              Discharge: <b className="text-cyan-400">{gf.discharge_m3s} m³/s</b>
-                            </div>
-                            <div className={`text-[12px] text-cyan-400/60 ${textMono} mt-1`}>River Discharge</div>
-                          </div>
-                        </div>
-
-                        {/* Agreement badge */}
-                        <div className="flex items-center justify-center gap-2 py-1">
-                          <span className={`text-[13px] font-bold font-mono px-3 py-1 rounded-full border ${comp.agreement && comp.agreement_score >= 0.9
-                            ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                            : comp.agreement
-                              ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
-                              : 'bg-red-500/15 text-red-400 border-red-500/30'
-                            }`}>
-                            {comp.agreement && comp.agreement_score >= 0.9 ? 'MATCH' : comp.agreement ? 'CLOSE' : 'DIFFERS'}
-                            <span className="ml-1 text-[12px] opacity-70">{(comp.agreement_score * 100).toFixed(0)}%</span>
+                      {/* Prediction explanation text */}
+                      <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                            Prediction Explanation
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">
+                            GloFAS Integrated
                           </span>
                         </div>
-                      </div>
-
-                      {/* Why they agree/differ */}
-                      <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
-                        <span className={`text-[13px] uppercase ${textMono} tracking-widest ${comp.agreement && comp.agreement_score >= 0.9 ? 'text-emerald-400' : 'text-amber-400'
-                          }`}>
-                          {comp.agreement && comp.agreement_score >= 0.9
-                            ? 'Why Both Sources Agree'
-                            : comp.agreement
-                              ? "Why They're Close (Minor Difference)"
-                              : 'Why Predictions Differ'}
-                        </span>
-                        <p className={`text-sm text-gray-300 ${textMono} leading-relaxed`}>{comp.summary}</p>
-                        {gf.explanation && (
-                          <div className="text-[12px] text-cyan-400/80 font-mono leading-relaxed p-2 rounded bg-cyan-500/5 border-l-2 border-cyan-500/30">
-                            <span className="text-cyan-500 font-bold">GloFAS: </span>{gf.explanation}
-                          </div>
-                        )}
-                        {ml.explanation && (
-                          <div className="text-[12px] text-violet-400/80 font-mono leading-relaxed p-2 rounded bg-violet-500/5 border-l-2 border-violet-500/30">
-                            <span className="text-violet-400 font-bold">ML Model: </span>{ml.explanation}
-                          </div>
-                        )}
-                        {comp.difference_reasons.map((reason, i) => (
-                          <div key={i} className={`text-[13px] text-gray-400 leading-relaxed p-2.5 rounded-lg border-l-2 bg-[#151A22]/80 ${comp.agreement && comp.agreement_score >= 0.9 ? 'border-emerald-500/40' : 'border-amber-500/40'
-                            }`}>
-                            {reason}
-                          </div>
-                        ))}
+                        <p className={`text-[13px] text-gray-300 ${textMono} leading-relaxed`}>{ml.explanation}</p>
+                        <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                       </div>
 
                       {/* Top Contributing Factors */}
@@ -1191,19 +1067,23 @@ export default function GeospatialEngine() {
                           All Contributing Factors
                         </span>
                         <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                          ML feature importance — how much each input drives the prediction
+                          ML feature importance — 17 features including GloFAS river discharge
                         </span>
                         {ml.top_drivers.map(d => (
                           <div key={d.feature} className="flex flex-col gap-0.5">
                             <div className="flex items-center justify-between">
-                              <span className={`text-[13px] text-gray-400 ${textMono}`}>{d.feature.replace(/_/g, ' ')}</span>
+                              <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
+                                {d.feature.replace(/_/g, ' ')}
+                              </span>
                               <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
                             </div>
                             <div className="w-full h-2 bg-[#0B0E11] rounded-full overflow-hidden">
                               <div className="h-full rounded-full transition-all"
                                 style={{
                                   width: `${Math.min(d.importance * 400, 100)}%`,
-                                  backgroundColor: d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
+                                  backgroundColor: d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d'
+                                    ? '#22d3ee'
+                                    : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
                                 }}
                               />
                             </div>
@@ -1951,30 +1831,7 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
-                      {/* GloFAS Validation */}
-                      {val && (
-                        <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: val.agreement ? '#22c55e30' : '#ef444430' }}>
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                            <Satellite size={12} className="text-emerald-400" /> Live Validation — GloFAS
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[13px] font-bold px-2.5 py-1 rounded ${val.agreement ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
-                              {val.agreement ? '✓ ALIGNED' : '⚠ DIVERGENT'}
-                            </span>
-                            <span className="text-[13px] text-gray-500 font-mono">Score: {(val.agreement_score * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] font-mono mt-1">
-                            <span className="text-gray-500">Our Prediction</span>
-                            <span style={{ color: riskColor(val.our_prediction) }} className="text-right font-bold">{val.our_prediction}</span>
-                            <span className="text-gray-500">GloFAS Risk</span>
-                            <span style={{ color: riskColor(val.glofas_risk_level) }} className="text-right font-bold">{val.glofas_risk_level}</span>
-                            <span className="text-gray-500">River Discharge</span>
-                            <span className="text-right text-cyan-400">{val.glofas_discharge_m3s?.toFixed(1)} m³/s</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ML vs GloFAS Explainability Button */}
+                      {/* Prediction Explainability Button */}
                       <button
                         onClick={async () => {
                           if (!adHocLocation || explainLoading) return;
@@ -1996,89 +1853,49 @@ export default function GeospatialEngine() {
                             : 'border-violet-500/40 text-violet-300 bg-violet-500/10 hover:bg-violet-500/20'
                           }`}
                       >
-                        {explainLoading ? 'Analyzing live data...' : adHocExplanation ? '↻ Re-Analyze ML vs GloFAS' : 'Analyze: ML Prediction vs GloFAS'}
+                        {explainLoading ? 'Analyzing live data...' : adHocExplanation ? '↻ Refresh Explanation' : 'Explain Prediction'}
                       </button>
 
                       {/* Explanation Panels */}
                       {adHocExplanation && (() => {
                         const ml = adHocExplanation.ml_prediction;
-                        const gf = adHocExplanation.glofas_assessment;
-                        const comp = adHocExplanation.comparison;
                         return (
                           <>
-                            <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
-                              <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>ML Prediction vs GloFAS Ground Truth</span>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="bg-[#151A22] border border-violet-500/20 rounded-lg p-3 text-center">
-                                  <div className={`text-[12px] text-gray-500 uppercase ${textMono} mb-1`}>Our ML Model</div>
-                                  <span className="text-sm font-bold px-2 py-0.5 rounded" style={{ color: riskColor(ml.risk_level), backgroundColor: riskColor(ml.risk_level) + '20', border: `1px solid ${riskColor(ml.risk_level)}40` }}>
-                                    {ml.risk_level}
-                                  </span>
-                                  <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>Prob: <b className="text-white">{(ml.probability * 100).toFixed(0)}%</b></div>
-                                  <div className={`text-[12px] text-violet-400/60 ${textMono} mt-1`}>Weather + Terrain</div>
-                                </div>
-                                <div className="bg-[#151A22] border border-cyan-500/20 rounded-lg p-3 text-center">
-                                  <div className={`text-[12px] text-gray-500 uppercase ${textMono} mb-1`}>GloFAS Ground Truth</div>
-                                  <span className="text-sm font-bold px-2 py-0.5 rounded" style={{ color: riskColor(gf.risk_level), backgroundColor: riskColor(gf.risk_level) + '20', border: `1px solid ${riskColor(gf.risk_level)}40` }}>
-                                    {gf.risk_level}
-                                  </span>
-                                  <div className={`text-[13px] text-gray-400 ${textMono} mt-1.5`}>Discharge: <b className="text-cyan-400">{gf.discharge_m3s} m³/s</b></div>
-                                  <div className={`text-[12px] text-cyan-400/60 ${textMono} mt-1`}>River Discharge</div>
-                                </div>
-                              </div>
-                              <div className="flex items-center justify-center gap-2 py-1">
-                                <span className={`text-[13px] font-bold font-mono px-3 py-1 rounded-full border ${comp.agreement && comp.agreement_score >= 0.9 ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                  : comp.agreement ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30'
-                                    : 'bg-red-500/15 text-red-400 border-red-500/30'
-                                  }`}>
-                                  {comp.agreement && comp.agreement_score >= 0.9 ? 'MATCH' : comp.agreement ? 'CLOSE' : 'DIFFERS'}
-                                  <span className="ml-1 text-[12px] opacity-70">{(comp.agreement_score * 100).toFixed(0)}%</span>
+                            {/* Prediction explanation text */}
+                            <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                                  Prediction Explanation
+                                </span>
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">
+                                  GloFAS Integrated
                                 </span>
                               </div>
-                            </div>
-
-                            {/* Why agree/differ */}
-                            <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
-                              <span className={`text-[13px] uppercase ${textMono} tracking-widest ${comp.agreement && comp.agreement_score >= 0.9 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                {comp.agreement && comp.agreement_score >= 0.9
-                                  ? 'Why Both Sources Agree'
-                                  : comp.agreement
-                                    ? "Why They're Close (Minor Difference)"
-                                    : 'Why Predictions Differ'}
-                              </span>
-                              <p className={`text-sm text-gray-300 ${textMono} leading-relaxed`}>{comp.summary}</p>
-                              {gf.explanation && (
-                                <div className="text-[12px] text-cyan-400/80 font-mono leading-relaxed p-2 rounded bg-cyan-500/5 border-l-2 border-cyan-500/30">
-                                  <span className="text-cyan-500 font-bold">GloFAS: </span>{gf.explanation}
-                                </div>
-                              )}
-                              {ml.explanation && (
-                                <div className="text-[12px] text-violet-400/80 font-mono leading-relaxed p-2 rounded bg-violet-500/5 border-l-2 border-violet-500/30">
-                                  <span className="text-violet-400 font-bold">ML Model: </span>{ml.explanation}
-                                </div>
-                              )}
-                              {comp.difference_reasons.map((reason: string, i: number) => (
-                                <div key={i} className={`text-[13px] text-gray-400 leading-relaxed p-2.5 rounded-lg border-l-2 bg-[#151A22]/80 ${comp.agreement && comp.agreement_score >= 0.9 ? 'border-emerald-500/40' : 'border-amber-500/40'
-                                  }`}>
-                                  {reason}
-                                </div>
-                              ))}
+                              <p className={`text-[13px] text-gray-300 ${textMono} leading-relaxed`}>{ml.explanation}</p>
+                              <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                             </div>
 
                             {/* All Contributing Factors */}
                             <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
                               <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>All Contributing Factors</span>
                               <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                                ML feature importance — how much each input drives the prediction
+                                ML feature importance — 17 features including GloFAS river discharge
                               </span>
                               {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => (
                                 <div key={d.feature} className="flex flex-col gap-0.5">
                                   <div className="flex items-center justify-between">
-                                    <span className={`text-[13px] text-gray-400 ${textMono}`}>{d.feature.replace(/_/g, ' ')}</span>
+                                    <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
+                                      {d.feature.replace(/_/g, ' ')}
+                                    </span>
                                     <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
                                   </div>
                                   <div className="w-full h-2 bg-[#0B0E11] rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(d.importance * 400, 100)}%`, backgroundColor: d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563' }} />
+                                    <div className="h-full rounded-full transition-all" style={{
+                                      width: `${Math.min(d.importance * 400, 100)}%`,
+                                      backgroundColor: d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d'
+                                        ? '#22d3ee'
+                                        : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
+                                    }} />
                                   </div>
                                   <span className={`text-[12px] text-gray-500 ${textMono}`}>{d.influence}</span>
                                 </div>
@@ -2627,18 +2444,6 @@ export default function GeospatialEngine() {
                 : 'Vegetation anomaly index over time from NDVI analysis'}
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-[12px] text-gray-500 flex items-center gap-2 ${textMono}`}>
-              <SlidersHorizontal size={12} className="text-gray-400" /> Comparison
-            </span>
-            <div onClick={() => setComparisonMode(!comparisonMode)}
-              className="w-8 h-4 border border-white/10 rounded-full cursor-pointer relative transition-colors"
-              style={{ backgroundColor: comparisonMode ? primaryColor + '30' : '#151A22', borderColor: comparisonMode ? primaryColor : 'rgba(255,255,255,0.1)' }}
-            >
-              <div className="absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all"
-                style={{ backgroundColor: comparisonMode ? primaryColor : '#9ca3af', left: comparisonMode ? '14px' : '2px' }} />
-            </div>
-          </div>
         </div>
         <div className="flex-grow flex flex-col relative p-4 min-h-0">
           <div className="flex-grow w-full min-h-0">
@@ -2659,7 +2464,6 @@ export default function GeospatialEngine() {
                 <YAxis hide />
                 <RechartsTooltip contentStyle={{ background: '#0B0E11', border: '1px solid rgba(255,255,255,0.1)', fontFamily: 'monospace', fontSize: '13px' }} itemStyle={{ color: primaryColor, fontWeight: 'bold' }} />
                 <Area type="monotone" dataKey={chartKey} stroke={primaryColor} fill="url(#chartColor)" strokeWidth={2} name={currentOrb.chartLabel} />
-                {comparisonMode && <Area type="monotone" dataKey="confidence" stroke="#f97316" fill="url(#chartColor2)" strokeWidth={1.5} strokeDasharray="4 4" name="Confidence %" />}
               </AreaChart>
             </ResponsiveContainer>
           </div>
