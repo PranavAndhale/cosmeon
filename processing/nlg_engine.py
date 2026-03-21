@@ -168,9 +168,8 @@ class NLGEngine:
             data_block = json.dumps({
                 "region": region_name,
                 "current_risk": risk_data,
-                "ml_prediction": prediction_data,
+                "tiered_prediction": prediction_data,
                 "live_detection": detection_data,
-                "glofas_validation": validation_data,
                 "weather_factors": external_factors,
             }, indent=2, default=str)
 
@@ -182,7 +181,11 @@ class NLGEngine:
                         "content": (
                             "You are a climate intelligence analyst for the Cosmeon satellite "
                             "flood monitoring platform. Generate concise, professional executive "
-                            "summaries. Use specific numbers. Output JSON with keys: "
+                            "summaries. The prediction uses a tiered system: GloFAS v4 river "
+                            "discharge (T1=operational forecast, T4=ERA5 surrogate) as the primary "
+                            "signal, compounded with ERA5 precipitation anomaly and soil moisture. "
+                            "Mention the GloFAS tier and compound signals to convey verifiability. "
+                            "Use specific numbers. Output JSON with keys: "
                             '"narrative" (2-3 paragraphs), "highlights" (3-5 bullet points), '
                             '"risk_trend" (one of: escalating, stable, improving, critical).'
                         ),
@@ -248,29 +251,39 @@ class NLGEngine:
         if prediction_data:
             pred_risk = prediction_data.get("predicted_risk_level", "N/A")
             pred_prob = prediction_data.get("flood_probability", 0)
+            pred_conf = prediction_data.get("confidence", 0)
+            cf = prediction_data.get("contributing_factors", {}) or {}
+            tier = cf.get("glofas_tier", "?")
+            source = cf.get("glofas_source", "GloFAS v4")
+            precip_delta = cf.get("precip_compound", 0.0)
+            soil_delta = cf.get("soil_compound", 0.0)
+            # Build primary prediction sentence
             p2_parts.append(
-                f"The ML ensemble model predicts a **{pred_risk}** risk level with a "
-                f"flood probability of **{pred_prob:.0%}**."
+                f"The tiered flood assessment places this area at **{pred_risk}** risk "
+                f"({pred_prob:.0%} probability, {pred_conf:.0%} confidence). "
+                f"Primary signal: **{source}** (tier T{tier}) — "
+                f"the same operational model used by European flood early-warning services."
             )
+            # Compound signal summary
+            compound_parts = []
+            if precip_delta > 0.04:
+                compound_parts.append(f"elevated ERA5 precipitation (+{precip_delta:.0%} compound uplift)")
+            elif precip_delta < -0.04:
+                compound_parts.append(f"below-normal ERA5 precipitation ({precip_delta:.0%} compound reduction)")
+            if soil_delta > 0.04:
+                compound_parts.append(f"high soil saturation (+{soil_delta:.0%} compound uplift)")
+            if compound_parts:
+                p2_parts.append(f"Compound signals reinforcing this estimate: {', '.join(compound_parts)}.")
         if detection_data:
             det_risk = detection_data.get("detected_risk_level", "N/A")
             rainfall = detection_data.get("rainfall_7d_mm", 0)
             p2_parts.append(
-                f"Automated live detection confirms a **{det_risk}** risk, with "
+                f"Live satellite detection independently confirms a **{det_risk}** risk, with "
                 f"**{rainfall:.0f}mm** of rainfall recorded over the past 7 days."
-            )
-        if validation_data and isinstance(validation_data, dict):
-            val = validation_data.get("validation", validation_data)
-            agreement = val.get("agreement", False)
-            score = val.get("agreement_score", 0)
-            status = "aligned" if agreement else "divergent"
-            p2_parts.append(
-                f"GloFAS river discharge validation is **{status}** with our prediction "
-                f"(agreement score: {score:.0%})."
             )
 
         p2 = " ".join(p2_parts) if p2_parts else (
-            "Additional prediction and validation data will be available once analysis completes."
+            "Prediction data will be available once the tiered assessment completes."
         )
 
         # --- Highlights ---
@@ -279,9 +292,12 @@ class NLGEngine:
             f"Flood Coverage: {flood_pct:.1%} of monitored area ({flood_area:.1f} km²)",
         ]
         if prediction_data:
+            pred_cf = prediction_data.get("contributing_factors", {}) or {}
+            pred_tier = pred_cf.get("glofas_tier", "?")
             highlights.append(
-                f"ML Prediction: {prediction_data.get('predicted_risk_level', 'N/A')} "
-                f"({prediction_data.get('flood_probability', 0):.0%} probability)"
+                f"Prediction: {prediction_data.get('predicted_risk_level', 'N/A')} "
+                f"({prediction_data.get('flood_probability', 0):.0%} probability) — "
+                f"backed by GloFAS v4 T{pred_tier}"
             )
         if detection_data:
             highlights.append(

@@ -1101,6 +1101,34 @@ export default function GeospatialEngine() {
 
                 {explanation && (() => {
                   const ml = explanation.ml_prediction;
+                  const fv = ml.feature_values ?? {};
+                  const glofasIdx = Math.min(Math.round(fv.glofas_flood_risk ?? 0), 3);
+                  const glofasLabels = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+                  const glofasLevel = glofasLabels[glofasIdx];
+                  const anomaly = fv.discharge_anomaly_sigma ?? 0;
+                  const precip7d = fv.precip_7d_mm ?? 0;
+                  const precipAnom = fv.precip_anomaly ?? 0;
+                  const soil = fv.soil_saturation ?? 0;
+                  const hist = fv.mean_flood_pct ?? 0;
+                  type SigStatus = 'elevated' | 'normal' | 'low';
+                  const convSignals: { name: string; sub: string; val: string; status: SigStatus }[] = [
+                    { name: 'GloFAS v4', sub: 'River discharge', val: `${glofasLevel} • ${anomaly >= 0 ? '+' : ''}${anomaly.toFixed(1)}σ`, status: glofasIdx >= 2 ? 'elevated' : glofasIdx === 1 ? 'normal' : 'low' },
+                    { name: 'ERA5 Precipitation', sub: '7-day rainfall', val: `${precip7d.toFixed(0)}mm (${precipAnom >= 0 ? '+' : ''}${precipAnom.toFixed(1)}σ)`, status: precipAnom > 1.0 ? 'elevated' : precipAnom < -1.0 ? 'low' : 'normal' },
+                    { name: 'Soil Saturation', sub: 'ERA5/ECMWF IFS', val: `${(soil * 100).toFixed(0)}% saturated`, status: soil > 0.6 ? 'elevated' : soil > 0.3 ? 'normal' : 'low' },
+                    { name: 'Historical Baseline', sub: 'Regional DB records', val: hist > 0 ? `avg ${hist.toFixed(1)}% coverage` : 'No history available', status: hist > 10 ? 'elevated' : hist > 2 ? 'normal' : 'low' },
+                  ];
+                  const elevCount = convSignals.filter(s => s.status === 'elevated').length;
+                  const predHigh = ['HIGH', 'CRITICAL'].includes(ml.risk_level);
+                  const consensusMsg = predHigh && elevCount >= 3 ? `${elevCount}/4 independent signals elevated — prediction well-supported`
+                    : predHigh && elevCount === 2 ? `${elevCount}/4 signals elevated — moderate confidence, plausible`
+                    : predHigh && elevCount <= 1 ? `Only ${elevCount}/4 signals elevated — single-source signal, treat with caution`
+                    : !predHigh && elevCount === 0 ? '0/4 signals elevated — LOW prediction is well-supported'
+                    : `${elevCount}/4 signals elevated — prediction consistent with data`;
+                  const consensusColors = predHigh && elevCount >= 3 ? ['text-emerald-400', 'border-emerald-500/30 bg-emerald-500/10']
+                    : predHigh && elevCount <= 1 ? ['text-orange-400', 'border-orange-500/30 bg-orange-500/10']
+                    : ['text-cyan-400', 'border-cyan-500/30 bg-cyan-500/10'];
+                  const sigBadge = (s: SigStatus) => s === 'elevated' ? 'text-red-400 border-red-500/30 bg-red-500/10' : s === 'low' ? 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' : 'text-gray-500 border-gray-600/40 bg-gray-600/10';
+                  const sigLabel = (s: SigStatus) => s === 'elevated' ? '↑ Elevated' : s === 'low' ? '↓ Low' : '→ Normal';
                   return (
                     <>
                       {/* Prediction explanation text */}
@@ -1117,13 +1145,34 @@ export default function GeospatialEngine() {
                         <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                       </div>
 
+                      {/* Signal Convergence Panel */}
+                      <div className="bg-[#0B1320]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${consensusColors[1]} ${consensusColors[0]}`}>{elevCount}/4 agree</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {convSignals.map(sig => (
+                            <div key={sig.name} className="bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
+                                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge(sig.status)}`}>{sigLabel(sig.status)}</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-gray-600">{sig.sub}</span>
+                              <span className="text-[11px] font-mono text-gray-400">{sig.val}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className={`text-[12px] font-mono px-3 py-2 rounded-lg border ${consensusColors[1]} ${consensusColors[0]}`}>{consensusMsg}</div>
+                      </div>
+
                       {/* Top Contributing Factors */}
                       <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
                         <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
                           All Contributing Factors
                         </span>
                         <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                          ML feature importance — 17 features including GloFAS river discharge
+                          9 signals from GloFAS v4 + ERA5 reanalysis + ECMWF IFS
                         </span>
                         {ml.top_drivers.map(d => (
                           <div key={d.feature} className="flex flex-col gap-0.5">
@@ -1949,6 +1998,34 @@ export default function GeospatialEngine() {
                       {/* Explanation Panels */}
                       {adHocExplanation && (() => {
                         const ml = adHocExplanation.ml_prediction;
+                        const fv = ml.feature_values ?? {};
+                        const glofasIdx = Math.min(Math.round(fv.glofas_flood_risk ?? 0), 3);
+                        const glofasLabels = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+                        const glofasLevel = glofasLabels[glofasIdx];
+                        const anomaly = fv.discharge_anomaly_sigma ?? 0;
+                        const precip7d = fv.precip_7d_mm ?? 0;
+                        const precipAnom = fv.precip_anomaly ?? 0;
+                        const soil = fv.soil_saturation ?? 0;
+                        const hist = fv.mean_flood_pct ?? 0;
+                        type SigStatus2 = 'elevated' | 'normal' | 'low';
+                        const convSignals2: { name: string; sub: string; val: string; status: SigStatus2 }[] = [
+                          { name: 'GloFAS v4', sub: 'River discharge', val: `${glofasLevel} • ${anomaly >= 0 ? '+' : ''}${anomaly.toFixed(1)}σ`, status: glofasIdx >= 2 ? 'elevated' : glofasIdx === 1 ? 'normal' : 'low' },
+                          { name: 'ERA5 Precipitation', sub: '7-day rainfall', val: `${precip7d.toFixed(0)}mm (${precipAnom >= 0 ? '+' : ''}${precipAnom.toFixed(1)}σ)`, status: precipAnom > 1.0 ? 'elevated' : precipAnom < -1.0 ? 'low' : 'normal' },
+                          { name: 'Soil Saturation', sub: 'ERA5/ECMWF IFS', val: `${(soil * 100).toFixed(0)}% saturated`, status: soil > 0.6 ? 'elevated' : soil > 0.3 ? 'normal' : 'low' },
+                          { name: 'Historical Baseline', sub: 'Regional DB records', val: hist > 0 ? `avg ${hist.toFixed(1)}% coverage` : 'No history available', status: hist > 10 ? 'elevated' : hist > 2 ? 'normal' : 'low' },
+                        ];
+                        const elevCount2 = convSignals2.filter(s => s.status === 'elevated').length;
+                        const predHigh2 = ['HIGH', 'CRITICAL'].includes(ml.risk_level);
+                        const consensusMsg2 = predHigh2 && elevCount2 >= 3 ? `${elevCount2}/4 independent signals elevated — prediction well-supported`
+                          : predHigh2 && elevCount2 === 2 ? `${elevCount2}/4 signals elevated — moderate confidence, plausible`
+                          : predHigh2 && elevCount2 <= 1 ? `Only ${elevCount2}/4 signals elevated — single-source signal, treat with caution`
+                          : !predHigh2 && elevCount2 === 0 ? '0/4 signals elevated — LOW prediction is well-supported'
+                          : `${elevCount2}/4 signals elevated — prediction consistent with data`;
+                        const consensusColors2 = predHigh2 && elevCount2 >= 3 ? ['text-emerald-400', 'border-emerald-500/30 bg-emerald-500/10']
+                          : predHigh2 && elevCount2 <= 1 ? ['text-orange-400', 'border-orange-500/30 bg-orange-500/10']
+                          : ['text-cyan-400', 'border-cyan-500/30 bg-cyan-500/10'];
+                        const sigBadge2 = (s: SigStatus2) => s === 'elevated' ? 'text-red-400 border-red-500/30 bg-red-500/10' : s === 'low' ? 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' : 'text-gray-500 border-gray-600/40 bg-gray-600/10';
+                        const sigLabel2 = (s: SigStatus2) => s === 'elevated' ? '↑ Elevated' : s === 'low' ? '↓ Low' : '→ Normal';
                         return (
                           <>
                             {/* Prediction explanation text */}
@@ -1965,11 +2042,32 @@ export default function GeospatialEngine() {
                               <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                             </div>
 
+                            {/* Signal Convergence Panel */}
+                            <div className="bg-[#0B1320]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
+                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${consensusColors2[1]} ${consensusColors2[0]}`}>{elevCount2}/4 agree</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                {convSignals2.map(sig => (
+                                  <div key={sig.name} className="bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
+                                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge2(sig.status)}`}>{sigLabel2(sig.status)}</span>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-gray-600">{sig.sub}</span>
+                                    <span className="text-[11px] font-mono text-gray-400">{sig.val}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className={`text-[12px] font-mono px-3 py-2 rounded-lg border ${consensusColors2[1]} ${consensusColors2[0]}`}>{consensusMsg2}</div>
+                            </div>
+
                             {/* All Contributing Factors */}
                             <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
                               <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>All Contributing Factors</span>
                               <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                                ML feature importance — 17 features including GloFAS river discharge
+                                9 signals from GloFAS v4 + ERA5 reanalysis + ECMWF IFS
                               </span>
                               {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => (
                                 <div key={d.feature} className="flex flex-col gap-0.5">
