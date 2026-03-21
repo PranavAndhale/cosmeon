@@ -99,11 +99,11 @@ The platform is anchored around three core **Analysis Orbs**:
 │  threading.Lock • RandomState(42) • Background Pre-Training      │
 ├──────────────────────────────────────────────────────────────────┤
 │          SATELLITE & CLIMATE DATA LAYER                          │
-│  GloFAS v4 (discharge) • ERA5 via Open-Meteo (precip, ET₀)      │
-│  Sentinel-1 SAR • Sentinel-2 NDVI • MODIS Land Cover            │
+│  GloFAS v4 (discharge) • ERA5 via Open-Meteo (precip, ET₀)       │
+│  Sentinel-1 SAR • Sentinel-2 NDVI • MODIS Land Cover             │
 ├──────────────────────────────────────────────────────────────────┤
 │              DATABASE (SQLite via SQLAlchemy)                    │
-│  regions • risk_assessments • change_events • users             │
+│  regions • risk_assessments • change_events • users              │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
