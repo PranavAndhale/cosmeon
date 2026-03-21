@@ -15,6 +15,10 @@ const nextConfig: NextConfig = isExport
             source: "/api/:path*",
             destination: "http://localhost:8000/api/:path*",
           },
+          {
+            source: "/",
+            destination: "/index.html",
+          },
         ];
       },
     };
