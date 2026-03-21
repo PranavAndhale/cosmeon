@@ -90,10 +90,10 @@ interface ExplainData {
     model_inputs_source: string;
   };
   model_info: {
-    features_count: number;
-    includes_discharge: boolean;
+    architecture: string;
+    training_required: boolean;
     description: string;
-    feature_data_sources: Record<string, string[]>;
+    data_sources: Record<string, string[]>;
   };
 }
 
@@ -1072,7 +1072,7 @@ export default function GeospatialEngine() {
                         {ml.top_drivers.map(d => (
                           <div key={d.feature} className="flex flex-col gap-0.5">
                             <div className="flex items-center justify-between">
-                              <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
+                              <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
                                 {d.feature.replace(/_/g, ' ')}
                               </span>
                               <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
@@ -1081,7 +1081,7 @@ export default function GeospatialEngine() {
                               <div className="h-full rounded-full transition-all"
                                 style={{
                                   width: `${Math.min(d.importance * 400, 100)}%`,
-                                  backgroundColor: d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d'
+                                  backgroundColor: d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk'
                                     ? '#22d3ee'
                                     : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
                                 }}
@@ -1884,7 +1884,7 @@ export default function GeospatialEngine() {
                               {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => (
                                 <div key={d.feature} className="flex flex-col gap-0.5">
                                   <div className="flex items-center justify-between">
-                                    <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
+                                    <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
                                       {d.feature.replace(/_/g, ' ')}
                                     </span>
                                     <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
@@ -1892,7 +1892,7 @@ export default function GeospatialEngine() {
                                   <div className="w-full h-2 bg-[#0B0E11] rounded-full overflow-hidden">
                                     <div className="h-full rounded-full transition-all" style={{
                                       width: `${Math.min(d.importance * 400, 100)}%`,
-                                      backgroundColor: d.feature.startsWith('discharge') || d.feature === 'forecast_max_7d'
+                                      backgroundColor: d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk'
                                         ? '#22d3ee'
                                         : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
                                     }} />
