@@ -179,19 +179,40 @@ class LiveAnalysisEngine:
             region_name, lat, lon,
         )
 
-        # ── 1. Fetch river discharge (GloFAS) ──
-        discharge = self.flood_fetcher.fetch_river_discharge(
-            lat, lon, past_days=30, forecast_days=7
-        )
+        # ── 1-3. Fetch all external data in parallel ──
+        # Sequential calls on Render free-tier can each hit the 10s timeout before
+        # the cold TCP/TLS connection is established. Running concurrently cuts
+        # wall-clock time from (N × timeout) to ~1 × timeout.
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _fetch_discharge():
+            return self.flood_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+
+        def _fetch_rainfall():
+            return self.external_integrator.fetch_rainfall(lat, lon, days=7)
+
+        def _fetch_forecast():
+            return self.flood_fetcher.fetch_weather_forecast(lat, lon, days=7)
+
+        def _fetch_elevation():
+            return self.external_integrator.fetch_elevation(lat, lon)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            f_discharge  = pool.submit(_fetch_discharge)
+            f_rainfall   = pool.submit(_fetch_rainfall)
+            f_forecast   = pool.submit(_fetch_forecast)
+            f_elevation  = pool.submit(_fetch_elevation)
+
+            discharge        = f_discharge.result()
+            rainfall         = f_rainfall.result()
+            weather_forecast = f_forecast.result()
+            elevation        = f_elevation.result()
+
         logger.info(
             "  Discharge: current=%.1f m³/s, mean=%.1f, anomaly=%.2fσ",
             discharge.current_discharge, discharge.mean_discharge,
             discharge.discharge_anomaly,
         )
-
-        # ── 2. Fetch rainfall (recent + forecast) ──
-        rainfall = self.external_integrator.fetch_rainfall(lat, lon, days=7)
-        weather_forecast = self.flood_fetcher.fetch_weather_forecast(lat, lon, days=7)
 
         rainfall_7d = rainfall.get("total_rainfall_mm", 0)
         max_daily = rainfall.get("max_daily_mm", 0)
@@ -202,8 +223,6 @@ class LiveAnalysisEngine:
             rainfall_7d, max_daily, forecast_total,
         )
 
-        # ── 3. Fetch elevation ──
-        elevation = self.external_integrator.fetch_elevation(lat, lon)
         elev_mean = elevation.get("mean_elevation_m", 100)
         low_elev_pct = elevation.get("low_elevation_pct", 0)
         logger.info(
