@@ -131,6 +131,13 @@ class RealDataTrainer:
             soil_moist = day.get("soil_moisture", 0)
             temp = day.get("temp_max", 25)
 
+            # --- GloFAS discharge features for this day ---
+            day_anomaly = (discharge - discharge_mean) / max(discharge_std, 0.01)
+            discharge_ratio_val = discharge / max(discharge_mean, 0.01)
+            # 7-day lookback max as forecast proxy
+            discharge_7d = [aligned[j]["discharge"] for j in range(max(0, i - 6), i + 1)]
+            forecast_max = max(discharge_7d) if discharge_7d else 0.0
+
             # Month for seasonality
             try:
                 month = datetime.strptime(day["date"], "%Y-%m-%d").month
@@ -179,6 +186,10 @@ class RealDataTrainer:
                     "temperature": temp,
                     "month": month,
                     "elevation": elevation,
+                    "discharge_current": float(discharge),
+                    "discharge_anomaly": round(day_anomaly, 4),
+                    "discharge_ratio": round(discharge_ratio_val, 4),
+                    "forecast_max_7d": round(forecast_max, 2),
                 },
                 # Metadata (not used in training, for audit)
                 "_ground_truth": {
@@ -557,6 +568,11 @@ class RealDataTrainer:
                     "temperature": temp,
                     "month": month,
                     "elevation": elevation,
+                    # Discharge unavailable in fallback — neutral values
+                    "discharge_current": 0.0,
+                    "discharge_anomaly": 0.0,
+                    "discharge_ratio": 1.0,
+                    "forecast_max_7d": 0.0,
                 },
             }
             training_data.append(sample)

@@ -89,6 +89,8 @@ class FloodPredictor:
         "rainfall_mm", "elevation_m", "month", "risk_multiplier",
         "precip_7d", "precip_30d", "max_daily_rain_7d",
         "precip_anomaly", "soil_moisture", "temperature",
+        # GloFAS river discharge (integrated directly as features)
+        "discharge_current", "discharge_anomaly", "discharge_ratio", "forecast_max_7d",
     ]
 
     GBM_WEIGHT = 0.6
@@ -230,11 +232,18 @@ class FloodPredictor:
         soil_moisture = ext.get("soil_moisture", 0)
         temperature = ext.get("temperature", 25)
 
+        # GloFAS discharge features (injected by _enrich_with_model_hub or training pipeline)
+        discharge_current = ext.get("discharge_current", 0.0)
+        discharge_anomaly = ext.get("discharge_anomaly", 0.0)
+        discharge_ratio = ext.get("discharge_ratio", 1.0)   # 1.0 = at mean (neutral)
+        forecast_max_7d = ext.get("forecast_max_7d", 0.0)
+
         features = np.array([[
             mean_pct, max_pct, trend,
             rainfall, elevation, month, risk_mult,
             precip_7d, precip_30d, max_daily_rain,
             precip_anomaly, soil_moisture, temperature,
+            discharge_current, discharge_anomaly, discharge_ratio, forecast_max_7d,
         ]])
 
         return features
@@ -644,12 +653,14 @@ class FloodPredictor:
                 factors_dict["temperature"] = temp_anom["temperature_c"]
 
             discharge = get_river_discharge(lat, lon)
-            discharge_anomaly = discharge.get("anomaly_sigma", 0)
-            if discharge_anomaly > 1.5:
-                factors_dict["risk_multiplier"] = max(
-                    factors_dict.get("risk_multiplier", 1.0),
-                    1.0 + discharge_anomaly * 0.3,
-                )
+            current = discharge.get("current_discharge_m3s", 0.0)
+            mean = discharge.get("mean_discharge_m3s", 1.0)
+            anomaly = discharge.get("anomaly_sigma", 0.0)
+            forecast = discharge.get("forecast_discharge", [])
+            factors_dict["discharge_current"] = float(current)
+            factors_dict["discharge_anomaly"] = float(anomaly)
+            factors_dict["discharge_ratio"] = float(current / max(mean, 0.01))
+            factors_dict["forecast_max_7d"] = float(max(forecast)) if forecast else 0.0
 
         except Exception as e:
             logger.warning("Model hub enrichment failed (using basic features): %s", e)
@@ -807,10 +818,10 @@ class FloodPredictor:
             "all_drivers": drivers,
             "explanation": explanation,
             "model_inputs_source": (
-                "13 weather and terrain features ONLY. "
-                "No river discharge data is used as input. "
-                "Features: precipitation (7d, 30d, max daily, anomaly), "
-                "soil moisture, temperature, elevation, season, historical flood trends."
+                "17 features: weather (precipitation 7d/30d/max daily/anomaly, soil moisture, "
+                "temperature), terrain (elevation, season, risk multiplier), historical flood "
+                "trends, and GloFAS river discharge (current m³/s, anomaly σ, ratio vs mean, "
+                "7-day forecast max). Discharge is now integrated directly as model input."
             ),
             "model_version": (
                 "ensemble_xgb_lgbm_v1" if (_HAS_XGB and self._lgbm_model is not None)
@@ -913,6 +924,38 @@ class FloodPredictor:
                 if v > 1.3 else
                 f"Normal risk multiplier ({v:.2f})"
             ),
+            "discharge_current": lambda v: (
+                f"Very high river discharge ({v:.1f} m³/s) — elevated water levels"
+                if v > 500 else
+                f"Elevated river discharge ({v:.1f} m³/s)"
+                if v > 100 else
+                f"Moderate river discharge ({v:.1f} m³/s)"
+                if v > 10 else
+                f"Low river discharge ({v:.1f} m³/s) — normal water levels"
+            ),
+            "discharge_anomaly": lambda v: (
+                f"Extreme discharge anomaly ({v:+.2f}σ) — far above historical mean"
+                if v > 2.0 else
+                f"Elevated discharge anomaly ({v:+.2f}σ) — above historical mean"
+                if v > 1.0 else
+                f"Near-normal discharge ({v:+.2f}σ)"
+                if v > -0.5 else
+                f"Below-normal discharge ({v:+.2f}σ) — river lower than usual"
+            ),
+            "discharge_ratio": lambda v: (
+                f"Discharge {v:.1f}× the historical mean — extreme flood signal"
+                if v > 3.0 else
+                f"Discharge {v:.1f}× the historical mean — significantly elevated"
+                if v > 2.0 else
+                f"Discharge {v:.1f}× the historical mean — near normal"
+            ),
+            "forecast_max_7d": lambda v: (
+                f"High forecast peak discharge ({v:.1f} m³/s) over next 7 days"
+                if v > 500 else
+                f"Moderate forecast discharge ({v:.1f} m³/s) over next 7 days"
+                if v > 50 else
+                f"Low forecast discharge ({v:.1f} m³/s) — no surge expected"
+            ),
         }
 
         fn = descriptions.get(feature)
@@ -951,9 +994,8 @@ class FloodPredictor:
 
         # Add data source note
         parts.append(
-            "This prediction uses ONLY weather and terrain data "
-            "(precipitation, soil moisture, temperature, elevation, season). "
-            "River discharge (GloFAS) data is NOT used as an input."
+            "This prediction uses 17 features including weather, terrain, historical trends, "
+            "and GloFAS river discharge (current level, anomaly, ratio, 7-day forecast)."
         )
 
         return " ".join(parts)
@@ -1063,15 +1105,39 @@ class FloodPredictor:
             else:
                 base_flood = rng.beta(1.5, 12)  # mean ~0.11
 
+            # ── GloFAS discharge features — correlated with precipitation regime ──
+            # Discharge anomaly roughly tracks precipitation regime with noise
+            if regime == "dry":
+                discharge_anomaly_val = rng.uniform(-1.5, 0.2)
+                discharge_mean_val = rng.uniform(10, 500)
+            elif regime == "moderate":
+                discharge_anomaly_val = rng.uniform(-0.5, 1.0)
+                discharge_mean_val = rng.uniform(10, 500)
+            elif regime == "wet":
+                discharge_anomaly_val = rng.uniform(0.5, 2.0)
+                discharge_mean_val = rng.uniform(10, 1000)
+            else:  # extreme
+                discharge_anomaly_val = rng.uniform(1.5, 4.0)
+                discharge_mean_val = rng.uniform(50, 2000)
+
+            discharge_std_val = discharge_mean_val * rng.uniform(0.2, 0.5)
+            discharge_current_val = max(0.0, discharge_mean_val + discharge_anomaly_val * discharge_std_val)
+            discharge_ratio_val = discharge_current_val / max(discharge_mean_val, 0.01)
+            # Forecast max slightly above current for wet/extreme, similar for others
+            forecast_max_val = discharge_current_val * rng.uniform(0.9, 1.5 if regime in ["wet", "extreme"] else 1.1)
+
             # ── LABEL: determined by the SAME features the model will see ────
             risk_score = 0.0
-            risk_score += min(1.0, precip_7d / 200.0) * 0.30          # precip dominant
-            risk_score += min(1.0, soil_moisture / 0.50) * 0.20       # soil amplifier
-            risk_score += max(0.0, 1.0 - elevation / 200.0) * 0.15   # low elev risk
-            risk_score += max(0.0, min(1.0, precip_anomaly / 2.0)) * 0.10
-            risk_score += (0.10 if monsoon else 0.0)                  # seasonal
-            risk_score += min(0.5, base_flood) * 0.05                 # history
-            risk_score += min(1.0, max_daily_rain / 100.0) * 0.10    # intensity
+            risk_score += min(1.0, precip_7d / 200.0) * 0.25          # precip
+            risk_score += min(1.0, soil_moisture / 0.50) * 0.15       # soil amplifier
+            risk_score += max(0.0, 1.0 - elevation / 200.0) * 0.10   # low elev risk
+            risk_score += max(0.0, min(1.0, precip_anomaly / 2.0)) * 0.08
+            risk_score += (0.08 if monsoon else 0.0)                  # seasonal
+            risk_score += min(0.5, base_flood) * 0.04                 # history
+            risk_score += min(1.0, max_daily_rain / 100.0) * 0.08    # intensity
+            # Discharge features directly contribute
+            risk_score += max(0.0, min(1.0, discharge_anomaly_val / 3.0)) * 0.20
+            risk_score += max(0.0, min(1.0, (discharge_ratio_val - 1.0) / 3.0)) * 0.10
 
             risk_score *= seasonal_factor
             risk_score += rng.normal(0, 0.04)   # noise
@@ -1108,6 +1174,10 @@ class FloodPredictor:
                     "temperature": temperature,
                     "month": month,
                     "elevation": elevation,
+                    "discharge_current": float(discharge_current_val),
+                    "discharge_anomaly": float(discharge_anomaly_val),
+                    "discharge_ratio": float(discharge_ratio_val),
+                    "forecast_max_7d": float(forecast_max_val),
                 },
                 "label": label,
             })

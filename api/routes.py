@@ -248,50 +248,31 @@ def explain_location(
     known_ml_probability: Optional[float] = Query(None),
 ):
     """
-    Full ML vs GloFAS explainability for any arbitrary coordinates.
+    Full prediction explainability for any arbitrary coordinates.
 
-    known_ml_level / known_ml_probability — optional: when the frontend already
-    has an ML prediction from a prior /analyze call, pass it here so the
-    comparison is against the level the user is actually seeing, not a freshly
-    re-computed value that may differ due to live API variability.
+    GloFAS river discharge is now integrated directly as ML model features,
+    so a single unified prediction is returned with full feature-level analysis.
     """
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
 
     name = f"{lat:.2f}, {lon:.2f}"
 
-    # 1. Get external factors for these coords + add lat/lon for enrichment
+    # 1. Get external factors + add lat/lon for enrichment (triggers GloFAS fetch internally)
     factors = external.get_risk_factors_by_coords(lat, lon)
     factors_dict = factors.to_dict()
     factors_dict["_lat"] = lat
     factors_dict["_lon"] = lon
 
-    # 2. Run ML prediction with full explanation (no history for ad-hoc)
+    # 2. Run ML prediction — _enrich_with_model_hub fetches GloFAS discharge as features
     ml_result = predictor.explain_prediction(
         flood_history=[],
         external_factors=factors_dict,
         region_name=name,
     )
 
-    # 3. Fetch LIVE GloFAS discharge
-    from processing.live_flood_data import LiveFloodDataFetcher, generate_difference_analysis
-    live_fetcher = LiveFloodDataFetcher()
-    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
-
-    # 4. Generate difference analysis.
-    # If the caller supplied a known ML level (from a prior /analyze call), use
-    # that for the comparison so the panel is consistent with what the user sees.
     compare_ml_level = known_ml_level or ml_result["risk_level"]
     compare_ml_prob  = known_ml_probability if known_ml_probability is not None else ml_result["probability"]
-    comparison = generate_difference_analysis(
-        our_level=compare_ml_level,
-        our_feature_values=ml_result["feature_values"],
-        our_explanation=ml_result["explanation"],
-        glofas_level=discharge.flood_risk_level,
-        discharge_m3s=discharge.current_discharge,
-        anomaly_sigma=discharge.discharge_anomaly,
-        mean_discharge=discharge.mean_discharge,
-    )
 
     return {
         "region": {"id": -1, "name": name, "bbox": [lon - 0.5, lat - 0.5, lon + 0.5, lat + 0.5]},
@@ -305,41 +286,25 @@ def explain_location(
             "explanation": ml_result["explanation"],
             "model_inputs_source": ml_result["model_inputs_source"],
         },
-        "glofas_assessment": {
-            "risk_level": discharge.flood_risk_level,
-            "discharge_m3s": round(discharge.current_discharge, 2),
-            "anomaly_sigma": round(discharge.discharge_anomaly, 2),
-            "mean_discharge_m3s": round(discharge.mean_discharge, 2),
-            "explanation": comparison["glofas_explanation"],
-            "historical_discharge": discharge.discharge_m3s[-30:],
-            "historical_dates": discharge.dates[-30:],
-            "forecast_discharge": discharge.forecast_discharge[-7:],
-            "forecast_dates": discharge.forecast_dates[-7:],
-        },
-        "comparison": {
-            "agreement": comparison["agreement"],
-            "agreement_score": comparison["agreement_score"],
-            "summary": comparison["summary"],
-            "difference_reasons": comparison["difference_reasons"],
-            "our_methodology": comparison["our_methodology"],
-            "glofas_methodology": comparison["glofas_methodology"],
-        },
-        "independence_proof": {
-            "model_uses": (
-                "13 weather and terrain features: precipitation, soil moisture, temperature, "
-                "elevation, seasonal month, risk multiplier, historical trends."
+        "model_info": {
+            "features_count": 17,
+            "includes_discharge": True,
+            "description": (
+                "17 features: weather (precipitation 7d/30d/max daily/anomaly, soil moisture, "
+                "temperature), terrain (elevation, season, risk multiplier), historical flood "
+                "trends, and GloFAS river discharge (current, anomaly, ratio, 7-day forecast)."
             ),
-            "model_does_not_use": "River discharge data (GloFAS) is NOT an input to the prediction model.",
-            "glofas_uses": f"River discharge measurements from the nearest GloFAS grid cell at ({lat:.2f}, {lon:.2f}).",
-            "how_training_works": (
-                "During training, GloFAS discharge was used ONLY to generate labels. "
-                "The model's input features are exclusively weather and terrain data."
-            ),
-            "verification": "ML prediction is computed FIRST, then GloFAS data is fetched separately for comparison.",
             "feature_data_sources": {
-                "Open-Meteo Weather API": ["precip_7d", "precip_30d", "max_daily_rain_7d", "precip_anomaly", "soil_moisture", "temperature", "rainfall_mm"],
+                "Open-Meteo Weather API": [
+                    "precip_7d", "precip_30d", "max_daily_rain_7d",
+                    "precip_anomaly", "soil_moisture", "temperature", "rainfall_mm",
+                ],
                 "Open-Meteo Elevation API": ["elevation_m"],
                 "Calendar / Seasonal": ["month", "risk_multiplier"],
+                "Historical Database": ["mean_flood_pct", "max_flood_pct", "trend"],
+                "GloFAS via Open-Meteo": [
+                    "discharge_current", "discharge_anomaly", "discharge_ratio", "forecast_max_7d",
+                ],
             },
         },
     }
@@ -354,60 +319,34 @@ def explain_prediction(
     """
     Full prediction explainability for a region.
 
-    Returns side-by-side comparison of our ML prediction vs GloFAS,
-    with detailed reasons for any differences, feature-level analysis,
-    and proof of model independence.
-
-    This endpoint:
-      1. Runs the ML prediction (weather-only features)
-      2. Fetches live GloFAS discharge (independent ground truth)
-      3. Generates human-readable analysis of why they agree or differ
-      4. Proves model independence (different input data)
+    GloFAS river discharge is now integrated directly as ML model features,
+    producing a single unified prediction with full feature-level analysis.
     """
     region = db.get_region(region_id)
     if not region:
         raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
 
-    # 1. Get external factors (weather + terrain — NO discharge) + lat/lon for enrichment
+    # 1. Get external factors + lat/lon for enrichment (triggers GloFAS fetch internally)
     factors = external.get_risk_factors(region.bbox)
     factors_dict = factors.to_dict()
-    lat_r = (region.bbox[1] + region.bbox[3]) / 2
-    lon_r = (region.bbox[0] + region.bbox[2]) / 2
-    factors_dict["_lat"] = lat_r
-    factors_dict["_lon"] = lon_r
+    lat = (region.bbox[1] + region.bbox[3]) / 2
+    lon = (region.bbox[0] + region.bbox[2]) / 2
+    factors_dict["_lat"] = lat
+    factors_dict["_lon"] = lon
 
     # 2. Get recent risk history from database
     history = db.get_risk_history(region_id, limit=10)
     history_dicts = [r.to_dict() for r in history]
 
-    # 3. Run ML prediction with full explanation
+    # 3. Run ML prediction — _enrich_with_model_hub fetches GloFAS discharge as features
     ml_result = predictor.explain_prediction(
         flood_history=history_dicts,
         external_factors=factors_dict,
         region_name=region.name,
     )
 
-    # 4. Fetch LIVE GloFAS discharge (completely independent)
-    from processing.live_flood_data import LiveFloodDataFetcher, generate_difference_analysis
-    live_fetcher = LiveFloodDataFetcher()
-    lat = (region.bbox[1] + region.bbox[3]) / 2
-    lon = (region.bbox[0] + region.bbox[2]) / 2
-    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
-
-    # 5. Generate difference analysis.
-    # Use caller-supplied ML level when available so the comparison is against
-    # exactly what the user is seeing in the main prediction panel.
     compare_ml_level = known_ml_level or ml_result["risk_level"]
     compare_ml_prob  = known_ml_probability if known_ml_probability is not None else ml_result["probability"]
-    comparison = generate_difference_analysis(
-        our_level=compare_ml_level,
-        our_feature_values=ml_result["feature_values"],
-        our_explanation=ml_result["explanation"],
-        glofas_level=discharge.flood_risk_level,
-        discharge_m3s=discharge.current_discharge,
-        anomaly_sigma=discharge.discharge_anomaly,
-        mean_discharge=discharge.mean_discharge,
-    )
 
     return {
         "region": {
@@ -425,50 +364,13 @@ def explain_prediction(
             "explanation": ml_result["explanation"],
             "model_inputs_source": ml_result["model_inputs_source"],
         },
-        "glofas_assessment": {
-            "risk_level": discharge.flood_risk_level,
-            "discharge_m3s": round(discharge.current_discharge, 2),
-            "anomaly_sigma": round(discharge.discharge_anomaly, 2),
-            "mean_discharge_m3s": round(discharge.mean_discharge, 2),
-            "explanation": comparison["glofas_explanation"],
-            "historical_discharge": discharge.discharge_m3s[-30:],
-            "historical_dates": discharge.dates[-30:],
-            "forecast_discharge": discharge.forecast_discharge[-7:],
-            "forecast_dates": discharge.forecast_dates[-7:],
-        },
-        "comparison": {
-            "agreement": comparison["agreement"],
-            "agreement_score": comparison["agreement_score"],
-            "summary": comparison["summary"],
-            "difference_reasons": comparison["difference_reasons"],
-            "our_methodology": comparison["our_methodology"],
-            "glofas_methodology": comparison["glofas_methodology"],
-        },
-        "independence_proof": {
-            "model_uses": (
-                "13 weather and terrain features: precipitation (7-day, 30-day, max daily, "
-                "anomaly z-score), soil moisture, temperature, elevation, seasonal month, "
-                "risk multiplier, historical flood percentage trends."
-            ),
-            "model_does_not_use": (
-                "River discharge data (GloFAS) is NOT an input to the prediction model. "
-                "The model has zero access to discharge measurements at prediction time."
-            ),
-            "glofas_uses": (
-                "River discharge measurements (m3/s) from the nearest GloFAS hydrological "
-                f"grid cell at coordinates ({lat:.2f}, {lon:.2f}). Risk is derived from "
-                "statistical deviation of current discharge from the historical mean."
-            ),
-            "how_training_works": (
-                "During training, GloFAS discharge data was used ONLY to generate labels "
-                "(ground truth). The model's input features are exclusively weather and "
-                "terrain data. This means the model learned: 'given weather conditions X, "
-                "the actual flood outcome was Y.' At prediction time, it uses only weather "
-                "to predict the outcome - it never sees discharge data."
-            ),
-            "verification": (
-                "The ML prediction is computed FIRST, then GloFAS data is fetched separately "
-                "for comparison. There is no data path where discharge feeds into the prediction."
+        "model_info": {
+            "features_count": 17,
+            "includes_discharge": True,
+            "description": (
+                "17 features: weather (precipitation 7d/30d/max daily/anomaly, soil moisture, "
+                "temperature), terrain (elevation, season, risk multiplier), historical flood "
+                "trends, and GloFAS river discharge (current, anomaly, ratio, 7-day forecast)."
             ),
             "feature_data_sources": {
                 "Open-Meteo Weather API": [
@@ -477,8 +379,9 @@ def explain_prediction(
                 ],
                 "Open-Meteo Elevation API": ["elevation_m"],
                 "Calendar / Seasonal": ["month", "risk_multiplier"],
-                "Historical Database (past assessments)": [
-                    "mean_flood_pct", "max_flood_pct", "trend",
+                "Historical Database": ["mean_flood_pct", "max_flood_pct", "trend"],
+                "GloFAS via Open-Meteo": [
+                    "discharge_current", "discharge_anomaly", "discharge_ratio", "forecast_max_7d",
                 ],
             },
         },
