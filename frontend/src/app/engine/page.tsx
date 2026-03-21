@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, SlidersHorizontal, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchDetection, triggerAnalysis, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus } from "@/lib/api";
 import { BarChart, Bar, LineChart, Line } from "recharts";
 
 // ─── Types ───
@@ -189,8 +189,6 @@ export default function GeospatialEngine() {
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [validation, setValidation] = useState<ValidationData | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [liveDetection, setLiveDetection] = useState<any>(null);
-  const [analyzing, setAnalyzing] = useState(false);
   const [explanation, setExplanation] = useState<ExplainData | null>(null);
   const [explainLoading, setExplainLoading] = useState(false);
   // showIndependence removed — section was removed from UI
@@ -499,24 +497,6 @@ export default function GeospatialEngine() {
       else setValidation(null);
     });
 
-    // Fetch latest live detection result
-    fetchDetection(region.id).then(detData => {
-      if (detData && detData.detection) setLiveDetection(detData.detection);
-      else setLiveDetection(null);
-    });
-
-    // Auto-trigger a fresh live analysis so timestamps are always current
-    if (autoAnalyze) {
-      triggerAnalysis(region.id).then(async (result) => {
-        if (result?.detection) setLiveDetection(result.detection);
-        // Re-fetch risk to update "Last Analyzed" timestamp
-        const freshRisk = await fetchRegionRisk(region.id);
-        if (freshRisk && !freshRisk.message) setLatestRisk(freshRisk);
-        // Re-fetch prediction with fresh data
-        const freshPred = await fetchPrediction(region.id);
-        if (freshPred && freshPred.predicted_risk_level) setPrediction(freshPred);
-      });
-    }
   }, []);
 
   // ── Load Region-Specific Data when selection changes ──
@@ -956,9 +936,9 @@ export default function GeospatialEngine() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     {latestRisk ? (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>
+                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(latestRisk.risk_level) }}>
                         <AlertTriangle size={16} />
-                        {liveDetection?.detected_risk_level || latestRisk.risk_level} RISK
+                        {latestRisk.risk_level} RISK
                         <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
                           {latestRisk.change_type}
                         </span>
@@ -1001,11 +981,11 @@ export default function GeospatialEngine() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
-                    <span className={`text-xl font-bold ${textMono} text-white`}>{(liveDetection?.flood_area_km2 ?? latestRisk.flood_area_km2).toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
+                    <span className={`text-xl font-bold ${textMono} text-white`}>{(latestRisk.flood_area_km2).toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
                   </div>
                   <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
                     <span className={`text-[13px] text-gray-500 uppercase ${textMono}`} title="Data quality score based on source availability (GloFAS, weather, elevation)">Data Quality</span>
-                    <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{((liveDetection?.confidence_score ?? latestRisk.confidence_score) * 100).toFixed(0)}%</span>
+                    <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{((latestRisk.confidence_score) * 100).toFixed(0)}%</span>
                   </div>
                 </div>
 
@@ -1013,11 +993,11 @@ export default function GeospatialEngine() {
                   <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                    <span style={{ color: riskColor(liveDetection?.detected_risk_level || latestRisk.risk_level) }}>{((liveDetection?.flood_probability ?? latestRisk.flood_percentage) * 100).toFixed(1)}%</span>
+                    <span style={{ color: riskColor(latestRisk.risk_level) }}>{((latestRisk.flood_percentage) * 100).toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Total Monitored Area</span>
-                    <span className="text-white">{(liveDetection?.total_area_km2 ?? latestRisk.total_area_km2).toFixed(0)} km²</span>
+                    <span className="text-white">{(latestRisk.total_area_km2).toFixed(0)} km²</span>
                   </div>
                   <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
                     <span className="text-gray-300">Water Change</span>
@@ -1033,49 +1013,7 @@ export default function GeospatialEngine() {
                     <span className="text-gray-300">Last Analyzed</span>
                     <span className="text-gray-400">{latestRisk.timestamp ? new Date(latestRisk.timestamp).toLocaleDateString() : 'N/A'}</span>
                   </div>
-                  {/* Live detection data source */}
-                  {liveDetection?.data_sources && (
-                    <div className="pt-2 border-t border-white/5">
-                      <span className={`text-[11px] text-gray-600 ${textMono}`}>
-                        Live: {liveDetection.data_sources.join(' · ')}
-                      </span>
-                    </div>
-                  )}
                 </div>
-
-                {/* Risk Factor Breakdown from live detection */}
-                {liveDetection?.risk_factors && Object.keys(liveDetection.risk_factors).filter(k => k !== 'composite_score').length > 0 && (
-                  <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2">
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
-                      Live Risk Factor Scores
-                    </span>
-                    <span className={`text-[11px] text-gray-600 ${textMono} -mt-1`}>
-                      Composite: <b className="text-white">{((liveDetection.risk_factors.composite_score ?? 0) * 100).toFixed(1)}%</b> · Confidence: <b className="text-gray-300">{(liveDetection.confidence_score * 100).toFixed(0)}%</b>
-                    </span>
-                    {Object.entries(liveDetection.risk_factors)
-                      .filter(([k]) => k !== 'composite_score')
-                      .sort(([, a]: any, [, b]: any) => (b.weighted ?? 0) - (a.weighted ?? 0))
-                      .map(([key, val]: any) => (
-                        <div key={key} className="flex flex-col gap-0.5">
-                          <div className="flex items-center justify-between">
-                            <span className={`text-[12px] text-gray-400 ${textMono}`}>{key.replace(/_/g, ' ')}</span>
-                            <span className={`text-[12px] ${textMono} font-bold`} style={{ color: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#6b7280' }}>
-                              {(val.score * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                          <div className="w-full h-1.5 bg-[#0B0E11] rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${Math.min(val.score * 100, 100)}%`,
-                                backgroundColor: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#374151'
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))
-                    }
-                  </div>
-                )}
 
                 {/* Prediction Block */}
                 {prediction && (
@@ -1098,69 +1036,6 @@ export default function GeospatialEngine() {
                   </div>
                 )}
 
-                {/* ── Live Automated Detection ── */}
-                {liveDetection && (
-                  <div className="bg-[#0A1628]/90 border rounded-xl p-4 flex flex-col gap-3" style={{ borderColor: riskColor(liveDetection.detected_risk_level) + '40' }}>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" /> Automated Detection
-                      </span>
-                      <button
-                        onClick={async () => {
-                          if (!selectedRegion || analyzing) return;
-                          setAnalyzing(true);
-                          const result = await triggerAnalysis(selectedRegion.id);
-                          if (result?.detection) setLiveDetection(result.detection);
-                          const freshRisk = await fetchRegionRisk(selectedRegion.id);
-                          if (freshRisk && !freshRisk.message) setLatestRisk(freshRisk);
-                          const freshPred = await fetchPrediction(selectedRegion.id);
-                          if (freshPred && freshPred.predicted_risk_level) setPrediction(freshPred);
-                          setAnalyzing(false);
-                        }}
-                        className={`text-[12px] font-mono px-2.5 py-1 rounded border transition-colors ${analyzing ? 'border-cyan-500/30 text-cyan-500 animate-pulse' : 'border-white/10 text-gray-400 hover:border-cyan-500/40 hover:text-cyan-400'}`}
-                      >
-                        {analyzing ? '⟳ Analyzing...' : '↻ Re-Analyze'}
-                      </button>
-                    </div>
-
-                    {/* Detected risk */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] text-gray-400 font-mono">Detected Risk</span>
-                      <span className="text-[15px] font-bold font-mono" style={{ color: riskColor(liveDetection.detected_risk_level) }}>
-                        {liveDetection.detected_risk_level}
-                      </span>
-                    </div>
-
-                    {/* Live data grid */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-mono">
-                      <span className="text-gray-500">River Discharge</span>
-                      <span className="text-right text-cyan-400">{liveDetection.river_discharge_m3s} m³/s</span>
-                      <span className="text-gray-500">Discharge Anomaly</span>
-                      <span className={`text-right ${liveDetection.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : liveDetection.discharge_anomaly_sigma > 0.8 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                        {liveDetection.discharge_anomaly_sigma > 0 ? '+' : ''}{liveDetection.discharge_anomaly_sigma}σ
-                      </span>
-                      <span className="text-gray-500">7-Day Rainfall</span>
-                      <span className="text-right text-blue-400">{liveDetection.rainfall_7d_mm} mm</span>
-                      <span className="text-gray-500">Forecast Rain</span>
-                      <span className="text-right text-blue-300">{liveDetection.rainfall_forecast_mm} mm</span>
-                      <span className="text-gray-500">Elevation</span>
-                      <span className="text-right text-gray-400">{liveDetection.elevation_m} m</span>
-                      <span className="text-gray-500">Confidence</span>
-                      <span className="text-right text-gray-400">{(liveDetection.confidence_score * 100).toFixed(0)}%</span>
-                    </div>
-
-                    {/* Alert */}
-                    {liveDetection.alert_triggered && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-[13px] text-red-300 font-mono">
-                        {liveDetection.alert_message}
-                      </div>
-                    )}
-
-                    <div className="text-[12px] text-gray-600 font-mono">
-                      Sources: {liveDetection.data_sources?.join(', ')}
-                    </div>
-                  </div>
-                )}
 
                 {/* ── GloFAS Live Validation Panel ── */}
                 {validation && (
