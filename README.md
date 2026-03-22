@@ -19,7 +19,7 @@
 [![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-cosmeon.onrender.com-00E5FF?style=for-the-badge&labelColor=0B0E11)](https://cosmeon.onrender.com)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Frontend](https://img.shields.io/badge/Frontend-Next.js%2016-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
-[![ML](https://img.shields.io/badge/ML-XGBoost%20%2B%20LightGBM%20Ensemble-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://xgboost.readthedocs.io)
+[![Prediction](https://img.shields.io/badge/Prediction-TieredFloodPredictor%20%2B%20SHAP-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
 </div>
@@ -42,14 +42,12 @@ The platform is anchored around three core **Analysis Orbs**:
 
 ## ✨ Key Features
 
-### 🤖 Machine Learning — TieredFloodPredictor
+### 🤖 Prediction — TieredFloodPredictor
 
-- **XGBoost + LightGBM 55/45 Soft-Voting Ensemble** trained on weather, terrain, and hydrology features — 7-day and 30-day precipitation, soil moisture, elevation, GloFAS river discharge (current value, σ-anomaly, ratio to mean, 7-day forecast max), seasonal indicators, and historical flood coverage
-- **Tiered GloFAS v4 Fallback (T1 → T4)** — the predictor attempts four progressively broader GloFAS API queries (point → 0.1° → 0.25° → 0.5° radius) before falling back to ERA5-only mode, ensuring maximum data availability across all global locations
-- **Thread-Safe Concurrent Training** — `threading.Lock` prevents race conditions when multiple requests trigger simultaneous re-training; non-blocking acquire with graceful fallback to the last good model
-- **Deterministic Predictions** — local `np.random.RandomState(42)` per training run; eliminates global seed mutation so predictions are stable across concurrent requests
-- **Background Pre-Training at Startup** — ML model warms up in a daemon thread before the first request hits, eliminating Render's 30-second cold-start timeout
-- **SHAP Explainability** — every prediction ships a ranked feature importance breakdown with human-readable influence labels (`INCREASES RISK` / `DECREASES RISK`) so analysts always know *why* a risk level was assigned
+- **Deterministic Compound Scorer** — aggregates outputs from GloFAS v4, ERA5, ECMWF IFS soil moisture, and regional historical records into a calibrated flood probability and risk level. No custom model training required; predictions are available instantly on startup
+- **Tiered GloFAS v4 Fallback (T1 → T4)** — attempts four progressively broader GloFAS API queries (point → 0.1° → 0.25° → 0.5° radius) before falling back to ERA5-only mode, ensuring data availability for any global location
+- **Calibrated Risk Levels** — GloFAS flood risk levels are mapped to real flood probabilities (e.g. GloFAS HIGH → ~62% probability) using empirically tuned baselines, then compounded with ERA5 precipitation anomaly and soil saturation signals
+- **SHAP-Style Explainability** — every prediction ships a ranked feature importance breakdown with human-readable influence labels (`INCREASES RISK` / `DECREASES RISK`) so analysts always know *why* a risk level was assigned
 
 ### 📡 Data Integration
 
@@ -102,9 +100,9 @@ The platform is anchored around three core **Analysis Orbs**:
 │                          │  • /api/discharge/{id}                │
 │                          │  • /api/nlg/summary                   │
 ├──────────────────────────┴───────────────────────────────────────┤
-│            ML PIPELINE — TieredFloodPredictor                    │
-│  XGBoost + LightGBM 55/45 Ensemble  •  SHAP  •  threading.Lock  │
-│  GloFAS T1→T4 Tiered Fallback  •  RandomState(42)               │
+│            TIERED FLOOD PREDICTOR                                │
+│  GloFAS T1→T4 Tiered Fallback  •  ERA5 Compound Scorer          │
+│  ECMWF IFS Soil Moisture  •  SHAP Explainability                 │
 ├──────────────────────────────────────────────────────────────────┤
 │          INTELLIGENCE ENGINES                                    │
 │  CompoundRiskEngine (INFORM/EU JRC)  •  FinancialImpactEngine    │
@@ -200,7 +198,7 @@ cosmeon/
 │   │   └── *.png                   # Hero, engine UI, solutions imagery
 │   ├── src/app/engine/             # Geospatial Engine UI (served at /engine)
 │   └── src/lib/api.ts              # Typed API client
-├── data/                           # Persisted ML model artifacts (.joblib)
+├── data/                           # Cached data artifacts and regional records
 ├── seed_demo.py                    # Seeds DB with demo regions + risk assessments
 ├── Dockerfile.render               # Production Dockerfile (used by Render)
 ├── render.yaml                     # Render deployment configuration
@@ -237,10 +235,9 @@ Every push to `main` triggers an automatic redeploy on Render. The production bu
 | FastAPI | REST API framework |
 | SQLAlchemy | ORM + query builder |
 | SQLite | Lightweight production database |
-| XGBoost | Primary gradient boosting classifier (55% ensemble weight) |
-| LightGBM | Secondary gradient boosting classifier (45% ensemble weight) |
-| SHAP | Model explainability and feature attribution |
-| NumPy | Seasonal decomposition + trend projection for forecasting |
+| scikit-learn | Feature scaling, sample weighting utilities |
+| SHAP | Feature attribution and explainability |
+| NumPy | Compound scoring, seasonal decomposition, trend projection |
 | ReportLab | Server-side PDF report generation |
 | OpenAI SDK | Optional GPT NLG integration (template-based fallback if not configured) |
 
