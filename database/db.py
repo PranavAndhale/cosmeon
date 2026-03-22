@@ -358,6 +358,10 @@ class DatabaseManager:
                 "dominant_risk_level": dominant,
                 "risk_distribution": risk_counts,
                 "assessment_count": len(records),
+                # ERA5 precipitation fields not available in DB fallback
+                "total_precip_mm": 0.0,
+                "max_precip_day_mm": 0.0,
+                "heavy_rain_days": 0,
             })
         return result
 
