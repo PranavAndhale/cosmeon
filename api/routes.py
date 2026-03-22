@@ -1038,8 +1038,8 @@ class LocationRequest(BaseModel):
 @app.post("/api/analyze/location")
 def analyze_location(req: LocationRequest):
     """
-    Run live flood risk analysis for any arbitrary lat/lon on Earth.
-    Combines live detection + ML prediction + GloFAS validation.
+    Run ML flood risk analysis for any arbitrary lat/lon on Earth.
+    Uses TieredFloodPredictor (GloFAS v4 + ERA5) — no automated detection.
     """
     lat, lon = req.lat, req.lon
     name = req.name or f"{lat:.2f}, {lon:.2f}"
@@ -1047,31 +1047,20 @@ def analyze_location(req: LocationRequest):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
 
-    # 1. Live detection (discharge, rainfall, etc.)
-    detection = analysis_engine.analyze_by_coords(lat, lon, name)
+    from processing.model_hub import get_river_discharge
+    from concurrent.futures import ThreadPoolExecutor
 
-    # 2. ML prediction (GBM + LSTM ensemble)
-    ml_prediction = predictor.predict_by_coords(lat, lon, name)
-
-    # 3. GloFAS validation
-    from processing.live_flood_data import LiveFloodDataFetcher
-    live_fetcher = LiveFloodDataFetcher()
-    discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
-
-    validation_result = live_fetcher.validate_prediction(
-        lat=lat, lon=lon,
-        our_risk_level=ml_prediction.predicted_risk_level,
-        our_probability=ml_prediction.flood_probability,
-        our_confidence=ml_prediction.confidence,
-    )
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_pred = pool.submit(predictor.predict_by_coords, lat, lon, name)
+        f_dis  = pool.submit(get_river_discharge, lat, lon, 7)
+        ml_prediction = f_pred.result()
+        discharge     = f_dis.result()
 
     return {
         "status": "analysis_complete",
         "location": {"lat": lat, "lon": lon, "name": name},
-        "detection": detection.to_dict(),
         "prediction": ml_prediction.to_dict(),
-        "validation": validation_result.to_dict(),
-        "discharge_data": discharge.to_dict(),
+        "discharge": discharge,
     }
 
 
