@@ -1674,10 +1674,17 @@ def get_compound_risk(region_id: int):
         bbox = region.bbox
         lat, lon = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
 
-        # Live flood detection — always use real-time signal, not stale DB
+        # Live flood detection for discharge anomaly signal
         detection = analysis_engine.analyze_by_coords(lat, lon, region.name)
-        flood_prob = detection.flood_probability
-        confidence = detection.confidence_score
+        discharge_anomaly_sigma = detection.discharge_anomaly_sigma
+
+        # Use TieredFloodPredictor for ML flood probability (consistent with ML Prediction card)
+        history = db.get_risk_history(region.id, limit=10)
+        expl = predictor.explain_prediction(
+            [h.to_dict() for h in history], {"_lat": lat, "_lon": lon}, region.name
+        )
+        flood_prob = expl.get("probability", detection.flood_probability) if expl else detection.flood_probability
+        confidence = expl.get("confidence", detection.confidence_score) if expl else detection.confidence_score
 
         # Fetch LIVE rainfall and elevation
         from processing.external_data import ExternalDataIntegrator
@@ -1710,6 +1717,7 @@ def get_compound_risk(region_id: int):
             gdp_usd=gdp_usd,
             lat=lat,
             lon=lon,
+            discharge_anomaly_sigma=discharge_anomaly_sigma,
         )
         d = result.to_dict()
         d["data_sources"] = {
@@ -1717,7 +1725,8 @@ def get_compound_risk(region_id: int):
             "vegetation_stress":  f"{veg_data['source']} (tier {veg_data['_tier']})",
             "thermal_anomaly":    f"{temp_data['source']} (tier {temp_data['_tier']})",
             "economic":           f"{econ_data['source']} (tier {econ_data['_tier']})",
-            "flood_probability":  "Live detection (GloFAS v4 + Open-Meteo)",
+            "flood_probability":  "TieredFloodPredictor (GloFAS v4 + ERA5 ML)",
+            "discharge_anomaly":  f"GloFAS v4 ({discharge_anomaly_sigma:+.2f}σ)",
             "methodology":        "INFORM Risk Index (EU JRC)",
         }
         return d
@@ -1747,10 +1756,14 @@ def compound_risk_location(body: LocationRequest):
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
 
-        # Live flood detection (primary flood probability signal)
+        # Live flood detection for discharge anomaly signal
         detection  = analysis_engine.analyze_by_coords(lat, lon, name)
-        flood_prob = detection.flood_probability
-        confidence = detection.confidence_score
+        discharge_anomaly_sigma = detection.discharge_anomaly_sigma
+
+        # Use TieredFloodPredictor for ML flood probability (consistent with ML Prediction card)
+        expl = predictor.explain_prediction([], {"_lat": lat, "_lon": lon}, name)
+        flood_prob = expl.get("probability", detection.flood_probability) if expl else detection.flood_probability
+        confidence = expl.get("confidence", detection.confidence_score) if expl else detection.confidence_score
 
         from processing.external_data import ExternalDataIntegrator
         ext = ExternalDataIntegrator()
@@ -1782,6 +1795,7 @@ def compound_risk_location(body: LocationRequest):
             gdp_usd=gdp_usd,
             lat=lat,
             lon=lon,
+            discharge_anomaly_sigma=discharge_anomaly_sigma,
         )
         d = result.to_dict()
         d["data_sources"] = {
@@ -1789,7 +1803,8 @@ def compound_risk_location(body: LocationRequest):
             "vegetation_stress":  f"{veg_data['source']} (tier {veg_data['_tier']})",
             "thermal_anomaly":    f"{temp_data['source']} (tier {temp_data['_tier']})",
             "economic":           f"{econ_data['source']} (tier {econ_data['_tier']})",
-            "flood_probability":  "GloFAS v4 + live detection",
+            "flood_probability":  "TieredFloodPredictor (GloFAS v4 + ERA5 ML)",
+            "discharge_anomaly":  f"GloFAS v4 ({discharge_anomaly_sigma:+.2f}σ)",
             "methodology":        "INFORM Risk Index (EU JRC)",
         }
         return d
