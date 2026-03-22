@@ -1080,13 +1080,19 @@ export default function GeospatialEngine() {
                   <div className="flex flex-col gap-1">
                     {latestRisk ? (
                       <>
-                        <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
-                          <AlertTriangle size={16} />
-                          {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level} RISK
-                          <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
-                            {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : latestRisk.change_type}
-                          </span>
-                        </span>
+                        {(() => {
+                          const liveLevel = prediction?.predicted_risk_level ?? latestRisk.risk_level;
+                          const displayLevel = activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? liveLevel) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? liveLevel) : liveLevel;
+                          return (
+                            <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel) }}>
+                              <AlertTriangle size={16} />
+                              {displayLevel} RISK
+                              <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
+                                {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : (prediction ? 'ML PREDICTION' : latestRisk.change_type)}
+                              </span>
+                            </span>
+                          );
+                        })()}
                         {(() => {
                           const sit = situationData?.regions.find(r => r.id === selectedRegion.id);
                           if (!sit || sit.situation_status === 'NORMAL') return null;
@@ -1910,15 +1916,19 @@ export default function GeospatialEngine() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     {adHocData ? (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW') : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW') : adHocData.detection?.detected_risk_level || 'LOW') }}>
-                        <AlertTriangle size={16} />
-                        {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'ANALYZING') : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? adHocData.detection?.detected_risk_level ?? 'ANALYZING') : (adHocData.detection?.detected_risk_level || 'ANALYZING')} RISK
-                        {adHocData.detection?.change_type && (
-                          <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '40', backgroundColor: riskColor(adHocData.detection?.detected_risk_level || 'LOW') + '20' }}>
-                            {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : 'LIVE_DETECTION'}
+                      (() => {
+                        const liveLevel = adHocData.prediction?.predicted_risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW';
+                        const displayLevel = activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? liveLevel) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? liveLevel) : liveLevel;
+                        return (
+                          <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel) }}>
+                            <AlertTriangle size={16} />
+                            {displayLevel} RISK
+                            <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
+                              {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : (adHocData.prediction ? 'ML PREDICTION' : 'LIVE DETECTION')}
+                            </span>
                           </span>
-                        )}
-                      </span>
+                        );
+                      })()
                     ) : (
                       <span className={`text-sm uppercase tracking-widest ${textMono} font-bold text-cyan-400 flex items-center gap-2`}>
                         <Activity size={16} className="animate-pulse" /> Analyzing...
