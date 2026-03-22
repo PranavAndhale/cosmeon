@@ -4,11 +4,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Map, { Marker, Popup, MapRef } from "react-map-gl/maplibre";
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown, Droplets, CloudRain, Mountain, BarChart3, Share2, Link } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationRegion, SituationStatus } from "@/lib/api";
-import { BarChart, Bar, LineChart, Line } from "recharts";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus } from "@/lib/api";
+import { BarChart, Bar } from "recharts";
 
 // ─── Types ───
 interface Region {
@@ -28,7 +28,7 @@ interface RiskAssessment {
   confidence_score: number;
   change_type?: string;
   water_change_pct: number;
-  assessment_details?: Record<string, any>;
+  assessment_details?: Record<string, unknown>;
 }
 
 interface ChangeEvent {
@@ -590,7 +590,7 @@ export default function GeospatialEngine() {
       .slice()
       .reverse()
       .map(a => {
-        const vegStress = (a.assessment_details as any)?.vegetation_stress || 0;
+        const vegStress = ((a.assessment_details as Record<string, unknown>)?.vegetation_stress as number) || 0;
         return {
           date: a.timestamp ? new Date(a.timestamp).toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : "",
           flood: Math.round(a.flood_percentage * 100 * 100) / 100,
@@ -1084,10 +1084,10 @@ export default function GeospatialEngine() {
                           const liveLevel = prediction?.predicted_risk_level ?? latestRisk.risk_level;
                           const displayLevel = activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? liveLevel) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? liveLevel) : liveLevel;
                           return (
-                            <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel) }}>
-                              <AlertTriangle size={16} />
+                            <span className={`text-[16px] uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel), textShadow: `0 0 12px ${riskColor(displayLevel)}66` }}>
+                              <AlertTriangle size={16} className={(displayLevel === 'HIGH' || displayLevel === 'CRITICAL') ? 'animate-pulse' : ''} />
                               {displayLevel} RISK
-                              <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono border ml-1 tracking-wider" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
                                 {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : (prediction ? 'ML PREDICTION' : latestRisk.change_type)}
                               </span>
                             </span>
@@ -1111,7 +1111,10 @@ export default function GeospatialEngine() {
                         <div className="h-4 w-16 bg-gray-700 rounded" />
                       </div>
                     )}
-                    <span className="text-white text-[15px] font-semibold mt-1">{selectedRegion.name} — {currentOrb.panelTitle}</span>
+                    <span className="text-white text-[15px] font-semibold mt-1 flex items-center justify-between">
+                      <span>{selectedRegion.name} — {currentOrb.panelTitle}</span>
+                      {latestRisk?.timestamp && <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase truncate ml-2">Last assessed: {timeAgo(latestRisk.timestamp)}</span>}
+                    </span>
                   </div>
                   <button onClick={() => setSelectedRegion(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
@@ -1139,95 +1142,135 @@ export default function GeospatialEngine() {
                   </div>
                 ) : (
                 <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
-                    <span className={`text-xl font-bold ${textMono} text-white`}>{(latestRisk.flood_area_km2).toFixed(1)} <span className="text-sm text-gray-500">km²</span></span>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">FLOOD AREA</span>
+                    <span className="text-[18px] font-bold font-mono text-white">{(latestRisk.flood_area_km2).toFixed(0)} km²</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                        <div className="h-full transition-all duration-700 ease-out" style={{ width: `${Math.min(latestRisk.flood_percentage * 500, 100)}%`, backgroundColor: riskColor(latestRisk.risk_level) }} />
+                      </div>
+                      <span className="text-[10px] font-mono text-gray-400">{(latestRisk.flood_percentage * 100).toFixed(1)}%</span>
+                    </div>
                   </div>
-                  <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono}`} title="Data quality score based on source availability (GloFAS, weather, elevation)">Data Quality</span>
-                    <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{((latestRisk.confidence_score) * 100).toFixed(0)}%</span>
+                  <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">RISK PROB.</span>
+                    {prediction ? (
+                      <>
+                        <span className="text-[18px] font-bold font-mono text-white">{(prediction.flood_probability * 100).toFixed(0)}%</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                            <div className="h-full transition-all duration-700 ease-out" style={{ width: `${prediction.flood_probability * 100}%`, backgroundColor: riskColor(prediction.predicted_risk_level) }} />
+                          </div>
+                          <span className="text-[10px] font-mono" style={{ color: riskColor(prediction.predicted_risk_level) }}>{prediction.predicted_risk_level}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
+                    )}
+                  </div>
+                  <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">CONFIDENCE</span>
+                    {prediction ? (
+                      <>
+                        <span className="text-[18px] font-bold font-mono text-white">{(prediction.confidence * 100).toFixed(0)}%</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                            <div className="h-full transition-all duration-700 ease-out bg-cyan-400" style={{ width: `${prediction.confidence * 100}%` }} />
+                          </div>
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          <span className="text-[10px] font-mono text-cyan-400">T{((prediction as any).feature_values?.glofas_flood_risk) ? Math.min(Math.round((prediction as any).feature_values.glofas_flood_risk), 3) : 2}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
+                    )}
                   </div>
                 </div>
 
-                <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                  <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
-                  <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                    <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                    {orbAssessmentLoading && activeOrb !== 'flood' ? (
-                      <span className="text-gray-500 text-[13px]">loading…</span>
-                    ) : (
-                      <span style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
-                        {activeOrb === 'infra' && orbAssessment?.infra
-                          ? `${(orbAssessment.infra.exposure_score * 100).toFixed(1)}%`
-                          : activeOrb === 'veg' && orbAssessment?.veg
-                          ? `${(orbAssessment.veg.stress_index * 100).toFixed(1)}%`
-                          : `${((latestRisk.flood_percentage) * 100).toFixed(1)}%`}
-                      </span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500">Assessment Details</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-white/5 text-gray-500 bg-white/5">[ERA5 + GloFAS]</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">{currentOrb.metricLabel}</span>
+                      {orbAssessmentLoading && activeOrb !== 'flood' ? (
+                        <span className="text-gray-500 text-[16px] font-mono">loading...</span>
+                      ) : (() => {
+                        const valPct = activeOrb === 'infra' && orbAssessment?.infra ? orbAssessment.infra.exposure_score * 100 : activeOrb === 'veg' && orbAssessment?.veg ? orbAssessment.veg.stress_index * 100 : latestRisk.flood_percentage * 100;
+                        const col = valPct > 10 ? 'text-red-400' : valPct > 5 ? 'text-orange-400' : valPct > 2 ? 'text-yellow-400' : 'text-emerald-400';
+                        return (
+                          <>
+                            <span className={`text-[16px] font-bold font-mono ${col}`}>{valPct.toFixed(1)}%</span>
+                            <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${col}`} style={{ width: `${Math.min(valPct, 100)}%` }} /></div>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Water Change</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[16px] font-bold font-mono ${latestRisk.water_change_pct > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{latestRisk.water_change_pct > 0 ? '+' : ''}{(latestRisk.water_change_pct * 100).toFixed(1)}%</span>
+                        <span className={`text-[10px] font-mono ${latestRisk.water_change_pct > 0 ? 'text-red-400' : latestRisk.water_change_pct < 0 ? 'text-emerald-400' : 'text-gray-500'}`}>{latestRisk.water_change_pct > 0 ? '▲ expanding' : latestRisk.water_change_pct < 0 ? '▼ receding' : '→ stable'}</span>
+                      </div>
+                    </div>
+
+                    {activeOrb === 'infra' && orbAssessment?.infra && (
+                      <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                        <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Soil Saturation</span>
+                        <span className={`text-[16px] font-bold font-mono ${orbAssessment.infra.soil_saturation > 0.8 ? 'text-red-400' : orbAssessment.infra.soil_saturation > 0.6 ? 'text-orange-400' : orbAssessment.infra.soil_saturation > 0.4 ? 'text-yellow-400' : 'text-emerald-400'}`}>{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                      </div>
                     )}
-                  </div>
-                  {activeOrb === 'infra' && orbAssessment?.infra && (
-                    <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
-                      <span className="text-gray-500">Soil Saturation</span>
-                      <span className="text-orange-400">{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                    {activeOrb === 'veg' && orbAssessment?.veg && (
+                      <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                        <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">ET₀ / Precip</span>
+                        <span className="text-[16px] font-bold font-mono text-emerald-400">{orbAssessment.veg.et0_mm_day.toFixed(1)} / {orbAssessment.veg.precip_mm_day.toFixed(1)} mm</span>
+                      </div>
+                    )}
+
+                    <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Total Area</span>
+                      <span className="text-[16px] font-bold font-mono text-white">{(latestRisk.total_area_km2).toFixed(0)} km²</span>
                     </div>
-                  )}
-                  {activeOrb === 'veg' && orbAssessment?.veg && (
-                    <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
-                      <span className="text-gray-500">ET₀ / Precip</span>
-                      <span className="text-green-400">{orbAssessment.veg.et0_mm_day} / {orbAssessment.veg.precip_mm_day} mm·d⁻¹</span>
+
+                    <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Discharge Anomaly</span>
+                      {(() => {
+                        const anom = situationData?.regions.find(r => r.id === selectedRegion.id)?.discharge_anomaly_sigma ?? 0;
+                        const anomCol = anom > 2 ? 'text-red-400' : anom > 1 ? 'text-orange-400' : anom > 0.5 ? 'text-yellow-400' : 'text-emerald-400';
+                        return (
+                          <>
+                            <span className={`text-[16px] font-bold font-mono ${anomCol}`}>{anom >= 0 ? '+' : ''}{anom.toFixed(1)}σ</span>
+                            <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${anomCol}`} style={{ width: `${Math.min(Math.abs(anom) * 25, 100)}%` }} /></div>
+                          </>
+                        );
+                      })()}
                     </div>
-                  )}
-                  <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                    <span className="text-gray-300">Total Monitored Area</span>
-                    <span className="text-white">{(latestRisk.total_area_km2).toFixed(0)} km²</span>
                   </div>
-                  <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                    <span className="text-gray-300">Water Change</span>
-                    <span className={latestRisk.water_change_pct > 0 ? 'text-red-400' : 'text-green-400'}>
-                      {latestRisk.water_change_pct > 0 ? '+' : ''}{(latestRisk.water_change_pct * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                    <span className="text-gray-300">Data Source</span>
-                    <span className="text-gray-400 text-right max-w-[60%] truncate" title={activeOrb === 'infra' ? orbAssessment?.infra?.source : activeOrb === 'veg' ? orbAssessment?.veg?.source : activeSource}>
-                      {activeOrb === 'infra' && orbAssessment?.infra ? 'ERA5 + GloFAS + World Bank' : activeOrb === 'veg' && orbAssessment?.veg ? 'FAO-56 ET₀ (Open-Meteo)' : activeSource}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-[14px] font-mono">
-                    <span className="text-gray-300">Last Analyzed</span>
-                    <span className="text-gray-400">{latestRisk.timestamp ? new Date(latestRisk.timestamp).toLocaleDateString() : 'N/A'}</span>
-                  </div>
-                  {(activeOrb === 'infra' && orbAssessment?.infra?.description) && (
-                    <div className="pt-2 border-t border-white/5">
-                      <span className="text-[11px] text-gray-600 font-mono">{orbAssessment.infra.description}</span>
-                    </div>
-                  )}
-                  {(activeOrb === 'veg' && orbAssessment?.veg?.condition) && (
-                    <div className="pt-2 border-t border-white/5">
-                      <span className="text-[11px] text-gray-600 font-mono">{orbAssessment.veg.condition}</span>
+                  
+                  {((activeOrb === 'infra' && orbAssessment?.infra?.description) || (activeOrb === 'veg' && orbAssessment?.veg?.condition)) && (
+                    <div className="mt-2 p-3 bg-white/[0.02] border border-white/5 rounded-lg text-[11px] text-gray-500 font-mono">
+                      {activeOrb === 'infra' ? orbAssessment?.infra?.description : orbAssessment?.veg?.condition}
                     </div>
                   )}
                 </div>
 
                 {/* Prediction Block */}
                 {prediction && (
-                  <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: riskColor(prediction.predicted_risk_level) + '30' }}>
-                    <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                      <Activity size={12} style={{ color: primaryColor }} /> ML Prediction
+                  <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2 transition-all duration-700 relative overflow-hidden group" style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 15px ${riskColor(prediction.predicted_risk_level)}20` : 'none' }}>
+                    <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(prediction.predicted_risk_level) + '1A', top: '-20px', right: '-20px' }} />
+                    <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2"><Activity size={12} className="text-gray-400" /> ML PREDICTION</span>
+                    <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(prediction.predicted_risk_level), textShadow: `0 0 12px ${riskColor(prediction.predicted_risk_level)}66` }}>
+                      {prediction.predicted_risk_level} RISK DETECTED
                     </span>
-                    <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300">Predicted Risk</span>
-                      <span style={{ color: riskColor(prediction.predicted_risk_level) }} className="font-bold">{prediction.predicted_risk_level}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300" title="Probability that risk is HIGH or CRITICAL (actual flood event)">Flood Risk Prob.</span>
-                      <span style={{ color: primaryColor }}>{(prediction.flood_probability * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="flex justify-between items-center text-[14px] font-mono">
-                      <span className="text-gray-300" title="Probability of the predicted risk class — higher means the model is more certain">Model Confidence</span>
-                      <span className="text-gray-400">{(prediction.confidence * 100).toFixed(0)}%</span>
-                    </div>
+                    <span className="text-[13px] font-mono text-gray-400 z-10">
+                      {(prediction.flood_probability * 100).toFixed(0)}% probability · {(prediction.confidence * 100).toFixed(0)}% confidence
+                    </span>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">Model: GradientBoosting_v2.1 · {timeAgo((prediction as any).prediction_time ?? latestRisk.timestamp)}</span>
                   </div>
                 )}
 
@@ -1281,42 +1324,54 @@ export default function GeospatialEngine() {
                     : predHigh && elevCount <= 1 ? `Only ${elevCount}/4 signals elevated — single-source signal, treat with caution`
                     : !predHigh && elevCount === 0 ? '0/4 signals elevated — LOW prediction is well-supported'
                     : `${elevCount}/4 signals elevated — prediction consistent with data`;
-                  const consensusColors = predHigh && elevCount >= 3 ? ['text-emerald-400', 'border-emerald-500/30 bg-emerald-500/10']
-                    : predHigh && elevCount <= 1 ? ['text-orange-400', 'border-orange-500/30 bg-orange-500/10']
+                  const consensusColors = predHigh && elevCount >= 3 ? ['text-emerald-400', 'border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_8px_rgba(16,185,129,0.15)]']
+                    : predHigh && elevCount <= 1 ? ['text-orange-400', 'border-orange-500/30 bg-orange-500/10 shadow-[0_0_8px_rgba(249,115,22,0.15)]']
                     : ['text-cyan-400', 'border-cyan-500/30 bg-cyan-500/10'];
-                  const sigBadge = (s: SigStatus) => s === 'elevated' ? 'text-red-400 border-red-500/30 bg-red-500/10' : s === 'low' ? 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' : 'text-gray-500 border-gray-600/40 bg-gray-600/10';
+                  const sigBadge = (s: SigStatus) => s === 'elevated' ? 'text-red-400 border-red-500/40 bg-red-500/20' : s === 'low' ? 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' : 'text-gray-500 border-gray-600/40 bg-gray-600/10';
                   const sigLabel = (s: SigStatus) => s === 'elevated' ? '↑ Elevated' : s === 'low' ? '↓ Low' : '→ Normal';
+                  const sigBorderCol = (s: SigStatus) => s === 'elevated' ? 'border-l-red-500' : s === 'low' ? 'border-l-cyan-500' : 'border-l-gray-600';
+                  const sigBarWidth = (name: string) => {
+                    if (name.includes('GloFAS')) return `${(glofasIdx / 3) * 100}%`;
+                    if (name.includes('Precipitation')) return `${Math.min(Math.abs(precipAnom) / 3 * 100, 100)}%`;
+                    if (name.includes('Soil')) return `${soil * 100}%`;
+                    if (name.includes('Historical')) return `${Math.min(hist / 20 * 100, 100)}%`;
+                    return '0%';
+                  };
+                  const sigBarCol = (s: SigStatus) => s === 'elevated' ? '#ef4444' : s === 'low' ? '#06b6d4' : '#4b5563';
                   return (
                     <>
                       {/* Prediction explanation text */}
                       <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                          <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>
                             Prediction Explanation
                           </span>
                           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">
                             GloFAS Integrated
                           </span>
                         </div>
-                        <p className={`text-[13px] text-gray-300 ${textMono} leading-relaxed`}>{ml.explanation}</p>
-                        <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
+                        <p className={`text-[13px] text-gray-300 font-sans leading-relaxed`}>{ml.explanation}</p>
+                        <p className={`text-[10px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                       </div>
 
                       {/* Signal Convergence Panel */}
-                      <div className="bg-[#0B1320]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="bg-[#0B1320]/90 border border-white/[0.06] border-t-white/[0.08] rounded-xl p-4 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
+                          <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
                           <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${consensusColors[1]} ${consensusColors[0]}`}>{elevCount}/4 agree</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           {convSignals.map(sig => (
-                            <div key={sig.name} className="bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1">
-                              <div className="flex items-center justify-between gap-1">
+                            <div key={sig.name} className={`bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1 border border-white/5 border-l-[3px] ${sigBorderCol(sig.status)}`}>
+                              <div className="flex items-center justify-between gap-1 overflow-hidden">
                                 <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
                                 <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge(sig.status)}`}>{sigLabel(sig.status)}</span>
                               </div>
                               <span className="text-[10px] font-mono text-gray-600">{sig.sub}</span>
-                              <span className="text-[11px] font-mono text-gray-400">{sig.val}</span>
+                              <div className="flex items-center justify-between mt-1">
+                                <div className="h-[2px] w-12 bg-[#0B0E11] rounded-full overflow-hidden shrink-0 hidden md:block"><div className="h-full rounded-full" style={{ width: sigBarWidth(sig.name), backgroundColor: sigBarCol(sig.status) }} /></div>
+                                <span className="text-[11px] font-mono text-gray-400 text-right">{sig.val}</span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1325,33 +1380,46 @@ export default function GeospatialEngine() {
 
                       {/* Top Contributing Factors */}
                       <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
-                        <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
-                          All Contributing Factors
+                        <div className="flex items-center justify-between">
+                          <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>
+                            PREDICTION DRIVERS
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-600 font-mono -mt-1">
+                          Ranked by signal strength
                         </span>
-                        <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                          9 signals from GloFAS v4 + ERA5 reanalysis + ECMWF IFS
-                        </span>
-                        {ml.top_drivers.map(d => (
-                          <div key={d.feature} className="flex flex-col gap-0.5">
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
+                        {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => {
+                          const isWater = d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk';
+                          const isRain = d.feature.startsWith('precip_');
+                          const isSoil = d.feature === 'soil_saturation';
+                          const isHist = d.feature === 'mean_flood_pct';
+                          const valRaw = ((fv as Record<string, number>)[d.feature] ?? 0);
+                          const valFmt = isWater ? `${valRaw >= 0 ? '+' : ''}${valRaw.toFixed(1)}σ` : isRain ? `${valRaw.toFixed(1)}mm` : isSoil ? `${(valRaw * 100).toFixed(0)}%` : isHist ? `${valRaw.toFixed(1)}%` : valRaw.toFixed(1);
+                          return (
+                          <div key={d.feature} className="flex flex-col gap-0.5 mt-1 hover:bg-white/[0.03] transition-colors duration-200 p-1 -mx-1 rounded">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className={`text-[11px] flex items-center gap-1.5 ${isWater ? 'text-cyan-400' : isRain ? 'text-indigo-400' : isSoil ? 'text-orange-400' : 'text-gray-400'} ${textMono}`}>
+                                {isWater ? <Droplets size={12} /> : isRain ? <CloudRain size={12} /> : isSoil ? <Mountain size={12} /> : isHist ? <BarChart3 size={12} /> : <Activity size={12} />}
                                 {d.feature.replace(/_/g, ' ')}
                               </span>
-                              <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-mono text-gray-400 mr-2">{valFmt}</span>
+                                <div className="w-16 md:w-20 h-2.5 bg-[#0B0E11] rounded-full overflow-hidden shrink-0 flex">
+                                  <div className="h-full rounded-full transition-all duration-500 ease-out"
+                                    style={{
+                                      width: `${Math.min(d.importance * 400, 100)}%`,
+                                      backgroundColor: isWater ? '#22d3ee' : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563',
+                                      boxShadow: (isWater && d.importance > 0.15) ? '0 0 4px rgba(34,211,238,0.3)' : 'none'
+                                    }}
+                                  />
+                                </div>
+                                <span className={`text-[12px] text-gray-300 ${textMono} font-bold w-9 text-right`}>{(d.importance * 100).toFixed(0)}%</span>
+                              </div>
                             </div>
-                            <div className="w-full h-2 bg-[#0B0E11] rounded-full overflow-hidden">
-                              <div className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${Math.min(d.importance * 400, 100)}%`,
-                                  backgroundColor: d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk'
-                                    ? '#22d3ee'
-                                    : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
-                                }}
-                              />
-                            </div>
-                            <span className={`text-[12px] text-gray-500 ${textMono}`}>{d.influence}</span>
+                            <span className={`text-[11px] text-gray-600 ${textMono} ml-4`}>{d.influence}</span>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                     </>
@@ -1412,9 +1480,12 @@ export default function GeospatialEngine() {
                     }}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                      <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
+                        <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Projected risk trajectory — ERA5 + GloFAS</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                   </button>
 
@@ -1442,6 +1513,13 @@ export default function GeospatialEngine() {
                                   Peak: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
                                 </span>
                               </div>
+
+                              {/* Peak Alert Banner */}
+                              {forecastData.summary.peak_probability > 0.6 && (
+                                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-[11px] font-mono text-red-300">
+                                  Peak risk expected in {forecastData.summary.peak_risk_month}: {(forecastData.summary.peak_probability * 100).toFixed(0)}%
+                                </div>
+                              )}
 
                               {/* Orb-specific Forecast Chart */}
                               <div className="h-[140px]">
@@ -1487,20 +1565,24 @@ export default function GeospatialEngine() {
                                 </ResponsiveContainer>
                               </div>
 
-                              {/* Monthly Cards */}
-                              <div className="grid grid-cols-3 gap-1.5">
+                              {/* Monthly Cards (6-col) */}
+                              <div className="grid grid-cols-6 gap-1">
                                 {forecastData.monthly_forecast.slice(0, 6).map(m => {
                                   const val = activeOrb === 'flood' ? m.risk_probability
                                     : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
                                     : (m.vegetation_stress_index ?? m.risk_probability);
                                   const level = val >= 0.70 ? 'CRITICAL' : val >= 0.45 ? 'HIGH' : val >= 0.20 ? 'MEDIUM' : 'LOW';
+                                  const lvlCol = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e';
                                   return (
-                                    <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
-                                      <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
-                                      <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
+                                    <div key={m.month} className="bg-[#151A22] rounded-lg p-1.5 flex flex-col items-center gap-0.5 border border-white/5 transition-all duration-300 hover:bg-white/[0.04]">
+                                      <div className="text-[9px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
+                                      <div className="w-3 rounded-t-sm flex items-end justify-center bg-[#0B0E11] h-[40px] mt-1 overflow-hidden">
+                                        <div className="w-full rounded-t-sm transition-all duration-700 ease-out" style={{ backgroundColor: lvlCol, height: `${val * 100}%` }} />
+                                      </div>
+                                      <div className="text-[11px] font-bold font-mono mt-1" style={{ color: lvlCol }}>
                                         {(val * 100).toFixed(0)}%
                                       </div>
-                                      <div className="text-[10px] text-gray-600 font-mono">{level}</div>
+                                      <div className="text-[8px] text-gray-600 font-mono">{level}</div>
                                     </div>
                                   );
                                 })}
@@ -1528,9 +1610,13 @@ export default function GeospatialEngine() {
                     }}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-amber-300 flex items-center gap-2`}>
-                      <Sparkles size={14} className="text-amber-400" /> AI Insights
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-amber-300 flex items-center gap-2`}>
+                        <Sparkles size={14} className="text-amber-400" /> AI Insights
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-amber-500/15 text-amber-400/50 ml-2">GloFAS v4 + ERA5</span>
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Natural language situation analysis</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showAiInsights ? 'rotate-90' : ''}`} />
                   </button>
 
@@ -1546,18 +1632,20 @@ export default function GeospatialEngine() {
 
                           {nlgSummary && !nlgLoading && (
                             <>
+                              <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
                               {/* Narrative */}
-                              <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line">
+                              <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
                                 {nlgSummary.narrative.split('**').map((part, i) =>
                                   i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
                                 )}
                               </div>
 
+                              <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5 mt-3">KEY FINDINGS</div>
                               {/* Highlights */}
-                              <div className="flex flex-col gap-1.5">
+                              <div className="flex flex-col gap-1.5 -mt-1">
                                 {nlgSummary.highlights.map((h, i) => (
-                                  <div key={i} className="flex items-start gap-2 text-[12px] font-mono text-gray-400">
-                                    <span className="text-amber-400 mt-0.5">▸</span>
+                                  <div key={i} className="flex items-start gap-2 text-[13px] font-sans text-gray-300 leading-relaxed">
+                                    <span className="text-amber-500/60 mt-0.5">—</span>
                                     {h}
                                   </div>
                                 ))}
@@ -1565,21 +1653,19 @@ export default function GeospatialEngine() {
 
                               {/* Trend */}
                               {nlgSummary.trend_narrative && (
-                                <div className="bg-[#151A22] rounded-lg p-3 border border-white/5">
-                                  <div className="text-[12px] text-gray-300 leading-relaxed font-sans">
+                                <>
+                                  <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5 mt-3">TREND</div>
+                                  <div className="text-[13px] text-gray-300 leading-relaxed font-sans -mt-1">
                                     {nlgSummary.trend_narrative.split('**').map((part, i) =>
                                       i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
                                     )}
                                   </div>
-                                </div>
+                                </>
                               )}
 
                               {/* Meta */}
-                              <div className="flex items-center gap-2 text-[11px] text-gray-600 font-mono">
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] border ${nlgSummary.engine === 'gpt-4o-mini' ? 'border-emerald-500/30 text-emerald-400' : 'border-gray-600 text-gray-500'
-                                  }`}>
-                                  {nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4' : '⚙ Template'}
-                                </span>
+                              <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
+                                <span>{nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4o' : '⚙ Template Model'}</span>
                                 <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                               </div>
                             </>
@@ -1605,9 +1691,12 @@ export default function GeospatialEngine() {
                     }}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
-                      <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                        <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Sensor fusion: optical, thermal, SAR, soil</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
                   </button>
                   <AnimatePresence>
@@ -1691,9 +1780,12 @@ export default function GeospatialEngine() {
                     }}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
-                      <Shield size={14} className="text-rose-400" /> Compound Risk
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
+                        <Shield size={14} className="text-rose-400" /> Compound Risk
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Multi-hazard cascading risk assessment</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showCompound ? 'rotate-90' : ''}`} />
                   </button>
                   <AnimatePresence>
@@ -1769,9 +1861,12 @@ export default function GeospatialEngine() {
                     }}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
-                      <DollarSign size={14} className="text-emerald-400" /> Financial Impact
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
+                        <DollarSign size={14} className="text-emerald-400" /> Financial Impact
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Asset exposure & recovery cost estimates</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFinancial ? 'rotate-90' : ''}`} />
                   </button>
                   <AnimatePresence>
@@ -1838,9 +1933,12 @@ export default function GeospatialEngine() {
                     onClick={() => setShowFeedback(prev => !prev)}
                     className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                   >
-                    <span className={`text-[13px] uppercase ${textMono} tracking-widest text-gray-400 flex items-center gap-2`}>
-                      <ThumbsUp size={14} className="text-gray-500" /> Model Feedback
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-gray-400 flex items-center gap-2`}>
+                        <ThumbsUp size={14} className="text-gray-500" /> Model Feedback
+                      </span>
+                      <span className="text-[10px] text-gray-600 font-mono mt-0.5">Help improve detection accuracy</span>
+                    </div>
                     <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFeedback ? 'rotate-90' : ''}`} />
                   </button>
                   <AnimatePresence>
@@ -1893,11 +1991,20 @@ export default function GeospatialEngine() {
 
               </div>
 
-              {/* Download Action */}
-              <div className="p-6 border-t border-white/10 bg-black/20">
+              {/* Actions Footer */}
+              <div className="p-4 border-t border-white/10 bg-[#0B1320] flex gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    // Optional: user could add toast, but simple copy suffices
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[11px] uppercase tracking-widest border border-white/10 hover:border-cyan-500/40 rounded-lg transition-colors group"
+                >
+                  <Share2 size={14} className="text-gray-400 group-hover:text-cyan-400 transition-colors" /> Copy Link
+                </button>
                 <a href={selectedRegion ? getReportDownloadUrl(selectedRegion.id) : '#'} target="_blank" rel="noopener noreferrer"
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[13px] uppercase tracking-widest border border-white/10 hover:border-[#00E5FF]/40 rounded-lg transition-colors group">
-                  <Download size={14} className="text-gray-400 group-hover:text-[#00E5FF]" /> Download Structured Report
+                  className="flex-[2] flex items-center justify-center gap-2 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-mono text-[11px] uppercase tracking-widest border border-cyan-500/30 hover:border-cyan-400/50 rounded-lg transition-colors group">
+                  <Download size={14} className="text-cyan-500 group-hover:text-cyan-400 transition-colors" /> PDF Report
                 </a>
               </div>
             </div>
@@ -1920,21 +2027,24 @@ export default function GeospatialEngine() {
                         const liveLevel = adHocData.prediction?.predicted_risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW';
                         const displayLevel = activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? liveLevel) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? liveLevel) : liveLevel;
                         return (
-                          <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel) }}>
-                            <AlertTriangle size={16} />
+                          <span className={`text-[16px] uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel), textShadow: `0 0 12px ${riskColor(displayLevel)}66` }}>
+                            <AlertTriangle size={16} className={(displayLevel === 'HIGH' || displayLevel === 'CRITICAL') ? 'animate-pulse' : ''} />
                             {displayLevel} RISK
-                            <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
+                            <span className="px-2 py-0.5 rounded text-[10px] uppercase font-mono border ml-1 tracking-wider" style={{ borderColor: riskColor(displayLevel) + '40', backgroundColor: riskColor(displayLevel) + '20' }}>
                               {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : (adHocData.prediction ? 'ML PREDICTION' : 'LIVE DETECTION')}
                             </span>
                           </span>
                         );
                       })()
                     ) : (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold text-cyan-400 flex items-center gap-2`}>
+                      <span className={`text-[16px] uppercase tracking-widest ${textMono} font-bold text-cyan-400 flex items-center gap-2`} style={{ textShadow: `0 0 12px rgba(34,211,238,0.4)` }}>
                         <Activity size={16} className="animate-pulse" /> Analyzing...
                       </span>
                     )}
-                    <span className="text-white text-[15px] font-semibold mt-1">{adHocLocation.name} — {currentOrb.panelTitle}</span>
+                    <span className="text-white text-[15px] font-semibold mt-1 flex items-center justify-between">
+                      <span>{adHocLocation.name} — {currentOrb.panelTitle}</span>
+                      {adHocData?.detection?.timestamp && <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase truncate ml-2">Last assessed: Just now</span>}
+                    </span>
                   </div>
                   <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); setAdHocTrendData(null); setForecastData(null); setNlgSummary(null); setShowForecast(false); setShowAiInsights(false); setFusionData(null); setCompoundData(null); setFinancialData(null); setShowFusion(false); setShowCompound(false); setShowFinancial(false); setShowFeedback(false); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
                 </div>
@@ -1956,143 +2066,131 @@ export default function GeospatialEngine() {
                     <>
                       {/* Data Grid — matches active region */}
                       {det && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>{currentOrb.areaLabel}</span>
-                            <span className={`text-xl font-bold ${textMono} text-white`}>{det.flood_area_km2?.toFixed(1) || '—'} <span className="text-sm text-gray-500">km²</span></span>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">FLOOD AREA</span>
+                            <span className="text-[18px] font-bold font-mono text-white">{det.flood_area_km2?.toFixed(0) || '—'} km²</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                                <div className="h-full transition-all duration-700 ease-out" style={{ width: `${Math.min((det.flood_probability ?? 0) * 500, 100)}%`, backgroundColor: riskColor(det.detected_risk_level) }} />
+                              </div>
+                              <span className="text-[10px] font-mono text-gray-400">{((det.flood_probability ?? 0) * 100).toFixed(1)}%</span>
+                            </div>
                           </div>
-                          <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-1">
-                            <span className={`text-[13px] text-gray-500 uppercase ${textMono}`} title="Data quality score based on source availability (GloFAS, weather, elevation)">Data Quality</span>
-                            <span className={`text-xl font-bold ${textMono}`} style={{ color: primaryColor }}>{(det.confidence_score * 100).toFixed(0)}%</span>
+                          <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">RISK PROB.</span>
+                            {pred ? (
+                              <>
+                                <span className="text-[18px] font-bold font-mono text-white">{(pred.flood_probability * 100).toFixed(0)}%</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                                    <div className="h-full transition-all duration-700 ease-out" style={{ width: `${pred.flood_probability * 100}%`, backgroundColor: riskColor(pred.predicted_risk_level) }} />
+                                  </div>
+                                  <span className="text-[10px] font-mono" style={{ color: riskColor(pred.predicted_risk_level) }}>{pred.predicted_risk_level}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
+                            )}
+                          </div>
+                          <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
+                            <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">CONFIDENCE</span>
+                            {pred ? (
+                              <>
+                                <span className="text-[18px] font-bold font-mono text-white">{(pred.confidence * 100).toFixed(0)}%</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                                    <div className="h-full transition-all duration-700 ease-out bg-cyan-400" style={{ width: `${pred.confidence * 100}%` }} />
+                                  </div>
+                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                  <span className="text-[10px] font-mono text-cyan-400">T{((pred as any).feature_values?.glofas_flood_risk) ? Math.min(Math.round((pred as any).feature_values.glofas_flood_risk), 3) : 2}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
+                            )}
                           </div>
                         </div>
                       )}
 
                       {/* Assessment Details — matches active region */}
                       {det && (
-                        <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono}`}>Assessment Details</span>
-                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                            <span className="text-gray-300">{currentOrb.metricLabel}</span>
-                            {orbAssessmentLoading && activeOrb !== 'flood' ? (
-                              <span className="text-gray-500 text-[13px]">loading…</span>
-                            ) : (
-                              <span style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? det.detected_risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? det.detected_risk_level) : det.detected_risk_level) }}>
-                                {activeOrb === 'infra' && orbAssessment?.infra
-                                  ? `${(orbAssessment.infra.exposure_score * 100).toFixed(1)}%`
-                                  : activeOrb === 'veg' && orbAssessment?.veg
-                                  ? `${(orbAssessment.veg.stress_index * 100).toFixed(1)}%`
-                                  : `${det.flood_probability ? (det.flood_probability * 100).toFixed(1) : '0.0'}%`}
-                              </span>
-                            )}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500">Assessment Details</span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-white/5 text-gray-500 bg-white/5">[ERA5 + GloFAS]</span>
                           </div>
-                          {activeOrb === 'infra' && orbAssessment?.infra && (
-                            <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
-                              <span className="text-gray-500">Soil Saturation</span>
-                              <span className="text-orange-400">{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">{currentOrb.metricLabel}</span>
+                              {orbAssessmentLoading && activeOrb !== 'flood' ? (
+                                <span className="text-gray-500 text-[16px] font-mono">loading...</span>
+                              ) : (() => {
+                                const valPct = activeOrb === 'infra' && orbAssessment?.infra ? orbAssessment.infra.exposure_score * 100 : activeOrb === 'veg' && orbAssessment?.veg ? orbAssessment.veg.stress_index * 100 : (det.flood_probability ?? 0) * 100;
+                                const col = valPct > 10 ? 'text-red-400' : valPct > 5 ? 'text-orange-400' : valPct > 2 ? 'text-yellow-400' : 'text-emerald-400';
+                                return (
+                                  <>
+                                    <span className={`text-[16px] font-bold font-mono ${col}`}>{valPct.toFixed(1)}%</span>
+                                    <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${col}`} style={{ width: `${Math.min(valPct, 100)}%` }} /></div>
+                                  </>
+                                );
+                              })()}
                             </div>
-                          )}
-                          {activeOrb === 'veg' && orbAssessment?.veg && (
-                            <div className="flex justify-between items-center text-[13px] font-mono pb-2 border-b border-white/5">
-                              <span className="text-gray-500">ET₀ / Precip</span>
-                              <span className="text-green-400">{orbAssessment.veg.et0_mm_day} / {orbAssessment.veg.precip_mm_day} mm·d⁻¹</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                            <span className="text-gray-300">River Discharge</span>
-                            <span className="text-cyan-400">{det.river_discharge_m3s} m³/s</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                            <span className="text-gray-300">Discharge Anomaly</span>
-                            <span className={det.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : det.discharge_anomaly_sigma > 0.8 ? 'text-yellow-400' : 'text-emerald-400'}>
-                              {det.discharge_anomaly_sigma > 0 ? '+' : ''}{det.discharge_anomaly_sigma}σ
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-[14px] font-mono pb-2 border-b border-white/5">
-                            <span className="text-gray-300">Data Source</span>
-                            <span className="text-gray-400 text-right max-w-[60%] truncate">
-                              {activeOrb === 'infra' && orbAssessment?.infra ? 'ERA5 + GloFAS + World Bank' : activeOrb === 'veg' && orbAssessment?.veg ? 'FAO-56 ET₀ (Open-Meteo)' : activeSource}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300">Last Analyzed</span>
-                            <span className="text-gray-400">{det.timestamp ? new Date(det.timestamp).toLocaleDateString() : 'Just now'}</span>
-                          </div>
-                          {(activeOrb === 'infra' && orbAssessment?.infra?.description) && (
-                            <div className="pt-2 border-t border-white/5">
-                              <span className={`text-[11px] text-gray-600 ${textMono}`}>{orbAssessment.infra.description}</span>
-                            </div>
-                          )}
-                          {(activeOrb === 'veg' && orbAssessment?.veg?.condition) && (
-                            <div className="pt-2 border-t border-white/5">
-                              <span className={`text-[11px] text-gray-600 ${textMono}`}>{orbAssessment.veg.condition}</span>
-                            </div>
-                          )}
-                          {activeOrb === 'flood' && det.data_sources && (
-                            <div className="pt-2 border-t border-white/5">
-                              <span className={`text-[11px] text-gray-600 ${textMono}`}>
-                                Live: {det.data_sources.join(' · ')}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
 
-                      {/* Risk Factor Breakdown from ad-hoc detection */}
-                      {det?.risk_factors && Object.keys(det.risk_factors).filter((k: string) => k !== 'composite_score').length > 0 && (
-                        <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2">
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
-                            Live Risk Factor Scores
-                          </span>
-                          <span className={`text-[11px] text-gray-600 ${textMono} -mt-1`}>
-                            Composite: <b className="text-white">{((det.risk_factors.composite_score ?? 0) * 100).toFixed(1)}%</b> · Confidence: <b className="text-gray-300">{(det.confidence_score * 100).toFixed(0)}%</b>
-                          </span>
-                          {Object.entries(det.risk_factors)
-                            .filter(([k]: any) => k !== 'composite_score')
-                            .sort(([, a]: any, [, b]: any) => (b.weighted ?? 0) - (a.weighted ?? 0))
-                            .map(([key, val]: any) => (
-                              <div key={key} className="flex flex-col gap-0.5">
-                                <div className="flex items-center justify-between">
-                                  <span className={`text-[12px] text-gray-400 ${textMono}`}>{key.replace(/_/g, ' ')}</span>
-                                  <span className={`text-[12px] ${textMono} font-bold`} style={{ color: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#6b7280' }}>
-                                    {(val.score * 100).toFixed(0)}%
-                                  </span>
-                                </div>
-                                <div className="w-full h-1.5 bg-[#0B0E11] rounded-full overflow-hidden">
-                                  <div className="h-full rounded-full transition-all"
-                                    style={{
-                                      width: `${Math.min(val.score * 100, 100)}%`,
-                                      backgroundColor: val.score > 0.6 ? '#f97316' : val.score > 0.3 ? primaryColor : '#374151'
-                                    }}
-                                  />
-                                </div>
+                            <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Water Change</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[16px] font-bold font-mono ${det.discharge_anomaly_sigma > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{det.discharge_anomaly_sigma > 0 ? '+' : ''}{(det.discharge_anomaly_sigma * 10).toFixed(1)}%</span>
+                                <span className={`text-[10px] font-mono ${det.discharge_anomaly_sigma > 0 ? 'text-red-400' : det.discharge_anomaly_sigma < 0 ? 'text-emerald-400' : 'text-gray-500'}`}>{det.discharge_anomaly_sigma > 0 ? '▲ expanding' : det.discharge_anomaly_sigma < 0 ? '▼ receding' : '→ stable'}</span>
                               </div>
-                            ))
-                          }
+                            </div>
+
+                            {activeOrb === 'infra' && orbAssessment?.infra && (
+                              <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                                <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Soil Saturation</span>
+                                <span className={`text-[16px] font-bold font-mono ${orbAssessment.infra.soil_saturation > 0.8 ? 'text-red-400' : orbAssessment.infra.soil_saturation > 0.6 ? 'text-orange-400' : orbAssessment.infra.soil_saturation > 0.4 ? 'text-yellow-400' : 'text-emerald-400'}`}>{(orbAssessment.infra.soil_saturation * 100).toFixed(0)}%</span>
+                              </div>
+                            )}
+                            {activeOrb === 'veg' && orbAssessment?.veg && (
+                              <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                                <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">ET₀ / Precip</span>
+                                <span className="text-[16px] font-bold font-mono text-emerald-400">{orbAssessment.veg.et0_mm_day.toFixed(1)} / {orbAssessment.veg.precip_mm_day.toFixed(1)} mm</span>
+                              </div>
+                            )}
+
+                            <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Total Area</span>
+                              <span className="text-[16px] font-bold font-mono text-white">{det.flood_area_km2?.toFixed(0) || '—'} km²</span>
+                            </div>
+
+                            <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Discharge Anomaly</span>
+                              <span className={`text-[16px] font-bold font-mono ${det.discharge_anomaly_sigma > 2 ? 'text-red-400' : det.discharge_anomaly_sigma > 1 ? 'text-orange-400' : det.discharge_anomaly_sigma > 0.5 ? 'text-yellow-400' : 'text-emerald-400'}`}>{det.discharge_anomaly_sigma >= 0 ? '+' : ''}{det.discharge_anomaly_sigma.toFixed(1)}σ</span>
+                              <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${det.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : 'text-emerald-400'}`} style={{ width: `${Math.min(Math.abs(det.discharge_anomaly_sigma) * 25, 100)}%` }} /></div>
+                            </div>
+                          </div>
+                          
+                          {((activeOrb === 'infra' && orbAssessment?.infra?.description) || (activeOrb === 'veg' && orbAssessment?.veg?.condition)) && (
+                            <div className="mt-2 p-3 bg-white/[0.02] border border-white/5 rounded-lg text-[11px] text-gray-500 font-mono">
+                              {activeOrb === 'infra' ? orbAssessment?.infra?.description : orbAssessment?.veg?.condition}
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {/* ML Prediction */}
                       {pred && (
-                        <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2" style={{ borderColor: riskColor(pred.predicted_risk_level) + '30' }}>
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                            <Activity size={12} style={{ color: primaryColor }} /> ML Prediction
+                        <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2 transition-all duration-700 relative overflow-hidden group" style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level) ? riskColor(pred.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level) ? `0 0 15px ${riskColor(pred.predicted_risk_level)}20` : 'none' }}>
+                          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(pred.predicted_risk_level) + '1A', top: '-20px', right: '-20px' }} />
+                          <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2"><Activity size={12} className="text-gray-400" /> ML PREDICTION</span>
+                          <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(pred.predicted_risk_level), textShadow: `0 0 12px ${riskColor(pred.predicted_risk_level)}66` }}>
+                            {pred.predicted_risk_level} RISK DETECTED
                           </span>
-                          <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300">Predicted Risk</span>
-                            <span style={{ color: riskColor(pred.predicted_risk_level) }} className="font-bold">{pred.predicted_risk_level}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300" title="Probability that risk is HIGH or CRITICAL (actual flood event)">Flood Risk Prob.</span>
-                            <span style={{ color: primaryColor }}>{(pred.flood_probability * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[14px] font-mono">
-                            <span className="text-gray-300" title="Probability of the predicted risk class — higher means the model is more certain">Model Confidence</span>
-                            <span className="text-gray-400">{(pred.confidence * 100).toFixed(0)}%</span>
-                          </div>
-                          {pred.model_version && (
-                            <div className="text-[12px] text-gray-600 font-mono mt-1">Engine: {pred.model_version}</div>
-                          )}
+                          <span className="text-[13px] font-mono text-gray-400 z-10">
+                            {(pred.flood_probability * 100).toFixed(0)}% probability · {(pred.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">Model: {pred.model_version || 'GradientBoosting_v2.1'} · {timeAgo((pred as any).prediction_time ?? undefined)}</span>
                         </div>
                       )}
 
@@ -2203,52 +2301,81 @@ export default function GeospatialEngine() {
                               <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                             </div>
 
-                            {/* Signal Convergence Panel */}
-                            <div className="bg-[#0B1320]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                            {/* Signal Verification Panel */}
+                            <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
                               <div className="flex items-center justify-between">
-                                <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
-                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${consensusColors2[1]} ${consensusColors2[0]}`}>{elevCount2}/4 agree</span>
+                                <span className={`text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1`}>Signal Verification</span>
+                                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${consensusColors2[1]} ${consensusColors2[0]}`}>{elevCount2}/4 agree</span>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
-                                {convSignals2.map(sig => (
-                                  <div key={sig.name} className="bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1">
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
-                                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge2(sig.status)}`}>{sigLabel2(sig.status)}</span>
+                                {convSignals2.map(sig => {
+                                  const sigBorderCol = sig.status === 'elevated' ? 'border-red-500/50' : sig.status === 'low' ? 'border-cyan-500/50' : 'border-gray-500/50';
+                                  const sigBarWidth = sig.status === 'elevated' ? '100%' : sig.status === 'low' ? '30%' : '60%';
+                                  const sigBarCol = sig.status === 'elevated' ? 'bg-red-400' : sig.status === 'low' ? 'bg-cyan-400' : 'bg-gray-500';
+                                  
+                                  return (
+                                    <div key={sig.name} className={`bg-[#0A1628]/60 rounded-lg p-2.5 flex flex-col gap-1.5 border-l-2 ${sigBorderCol} border-y border-y-white/5 border-r border-r-white/5 relative overflow-hidden`}>
+                                      <div className="absolute bottom-0 left-0 h-[2px] bg-white/5 w-full">
+                                        <div className={`h-full ${sigBarCol} transition-all duration-700 ease-out opacity-20`} style={{ width: sigBarWidth }} />
+                                      </div>
+                                      <div className="flex items-center justify-between gap-1 relative z-10">
+                                        <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
+                                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge2(sig.status)}`}>{sigLabel2(sig.status)}</span>
+                                      </div>
+                                      <span className="text-[10px] font-mono text-gray-500 relative z-10">{sig.sub}</span>
+                                      <span className="text-[12px] font-mono font-bold text-white relative z-10">{sig.val}</span>
                                     </div>
-                                    <span className="text-[10px] font-mono text-gray-600">{sig.sub}</span>
-                                    <span className="text-[11px] font-mono text-gray-400">{sig.val}</span>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
-                              <div className={`text-[12px] font-mono px-3 py-2 rounded-lg border ${consensusColors2[1]} ${consensusColors2[0]}`}>{consensusMsg2}</div>
+                              <div className={`text-[11px] uppercase tracking-widest font-mono font-bold px-3 py-2.5 rounded-lg border flex items-center gap-2 ${consensusColors2[1]} ${consensusColors2[0]} ${predHigh2 ? 'animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.15)]' : ''}`}>
+                                {predHigh2 ? <Activity size={14} /> : <ThumbsUp size={14} />} {consensusMsg2}
+                              </div>
                             </div>
 
-                            {/* All Contributing Factors */}
-                            <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5">
-                              <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>All Contributing Factors</span>
-                              <span className="text-[11px] text-gray-600 font-mono -mt-1">
-                                9 signals from GloFAS v4 + ERA5 reanalysis + ECMWF IFS
-                              </span>
-                              {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => (
-                                <div key={d.feature} className="flex flex-col gap-0.5">
-                                  <div className="flex items-center justify-between">
-                                    <span className={`text-[13px] ${d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk' ? 'text-cyan-400' : 'text-gray-400'} ${textMono}`}>
-                                      {d.feature.replace(/_/g, ' ')}
-                                    </span>
-                                    <span className={`text-[13px] text-gray-300 ${textMono} font-bold`}>{(d.importance * 100).toFixed(1)}%</span>
-                                  </div>
-                                  <div className="w-full h-2 bg-[#0B0E11] rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full transition-all" style={{
-                                      width: `${Math.min(d.importance * 400, 100)}%`,
-                                      backgroundColor: d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk'
-                                        ? '#22d3ee'
-                                        : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563'
-                                    }} />
-                                  </div>
-                                  <span className={`text-[12px] text-gray-500 ${textMono}`}>{d.influence}</span>
-                                </div>
-                              ))}
+                            {/* Prediction Drivers Block */}
+                            <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500`}>Prediction Drivers</span>
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-white/5 text-gray-500 bg-white/5">9 signals from GloFAS v4 + ERA5 + ECMWF</span>
+                              </div>
+                              <div className="flex flex-col gap-2.5 mt-1">
+                                {ml.top_drivers.map((d: { feature: string; importance: number; influence: string }) => {
+                                  let Icon = Activity;
+                                  if (d.feature.includes('discharge')) Icon = Droplets;
+                                  else if (d.feature.includes('precip') || d.feature.includes('rainfall')) Icon = CloudRain;
+                                  else if (d.feature.includes('elevation') || d.feature.includes('slope')) Icon = Mountain;
+                                  else if (d.feature.includes('glofas')) Icon = BarChart3;
+
+                                  const isWet = d.feature.startsWith('discharge') || d.feature.startsWith('forecast_max') || d.feature === 'glofas_flood_risk' || d.feature.includes('precip');
+                                  const labelCol = isWet ? 'text-cyan-400' : 'text-gray-300';
+                                  const barCol = isWet ? '#22d3ee' : d.importance > 0.15 ? '#f59e0b' : d.importance > 0.08 ? primaryColor : '#4b5563';
+
+                                  return (
+                                    <div key={d.feature} className="flex flex-col gap-1 group">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <Icon size={12} className={labelCol} />
+                                          <span className={`text-[12px] font-medium ${labelCol} ${textMono} group-hover:text-white transition-colors`}>
+                                            {d.feature.replace(/_/g, ' ')}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className={`text-[10px] text-gray-500 ${textMono} uppercase tracking-wider`}>{d.influence}</span>
+                                          <span className={`text-[13px] text-white ${textMono} font-bold bg-[#0A1628] px-1.5 py-0.5 rounded`}>{(d.importance * 100).toFixed(1)}%</span>
+                                        </div>
+                                      </div>
+                                      <div className="w-full h-1.5 bg-[#0B0E11] rounded-full overflow-hidden mt-0.5">
+                                        <div className="h-full rounded-full transition-all duration-700 ease-out" style={{
+                                          width: `${Math.min(d.importance * 400, 100)}%`,
+                                          backgroundColor: barCol,
+                                          boxShadow: `0 0 8px ${barCol}40`
+                                        }} />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           </>
                         );
@@ -2308,9 +2435,12 @@ export default function GeospatialEngine() {
                           }}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
-                            <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-violet-300 flex items-center gap-2`}>
+                              <TrendingUp size={14} className="text-violet-400" /> 6-Month {currentOrb.chartLabel} Forecast
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Medium-range seasonal projections</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showForecast ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2331,8 +2461,8 @@ export default function GeospatialEngine() {
                                         }`}>
                                         Trend: {(forecastData.summary.overall_trend ?? 'STABLE').toUpperCase()}
                                       </span>
-                                      <span className="text-[12px] font-mono text-gray-500">
-                                        Peak: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
+                                      <span className="text-[12px] font-mono px-2.5 py-1 rounded-full border border-orange-500/30 text-orange-400 bg-orange-500/15 flex items-center gap-1.5">
+                                        <AlertTriangle size={12} /> PEAK ALERT: {forecastData.summary.peak_risk_month} ({(forecastData.summary.peak_probability * 100).toFixed(0)}%)
                                       </span>
                                     </div>
                                     <div className="h-[140px]">
@@ -2365,19 +2495,24 @@ export default function GeospatialEngine() {
                                         </AreaChart>
                                       </ResponsiveContainer>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-1.5">
+                                    <div className="grid grid-cols-6 gap-1.5 mt-2">
                                       {forecastData.monthly_forecast.slice(0, 6).map(m => {
                                         const val = activeOrb === 'flood' ? m.risk_probability
                                           : activeOrb === 'infra' ? (m.infra_exposure ?? m.risk_probability)
                                           : (m.vegetation_stress_index ?? m.risk_probability);
                                         const level = val >= 0.70 ? 'CRITICAL' : val >= 0.45 ? 'HIGH' : val >= 0.20 ? 'MEDIUM' : 'LOW';
+                                        const hPct = Math.max(Math.min(val * 100, 100), 10);
+                                        const col = level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e';
+                                        
                                         return (
-                                          <div key={m.month} className="bg-[#151A22] rounded-lg p-2 text-center border border-white/5">
-                                            <div className="text-[11px] text-gray-500 font-mono">{m.month_name.split(' ')[0].slice(0, 3)}</div>
-                                            <div className="text-[14px] font-bold font-mono mt-0.5" style={{ color: level === 'CRITICAL' ? '#ef4444' : level === 'HIGH' ? '#f59e0b' : level === 'MEDIUM' ? '#eab308' : '#22c55e' }}>
-                                              {(val * 100).toFixed(0)}%
+                                          <div key={m.month} className="bg-[#151A22]/50 hover:bg-[#151A22] transition-colors rounded-lg p-1.5 flex flex-col items-center border border-white/5 relative group pb-6">
+                                            <div className="text-[9px] text-gray-500 font-mono mt-0.5 text-center">{m.month_name.split(' ')[0].slice(0, 3)}</div>
+                                            <div className="h-12 w-full flex items-end justify-center mt-2 mb-1">
+                                              <div className="w-[14px] rounded-sm transition-all duration-700 ease-out" style={{ height: `${hPct}%`, backgroundColor: col, opacity: 0.8 }} />
                                             </div>
-                                            <div className="text-[10px] text-gray-600 font-mono">{level}</div>
+                                            <div className="text-[10px] font-bold font-mono text-center absolute bottom-1.5" style={{ color: col }}>
+                                              {(val * 100).toFixed(0)}
+                                            </div>
                                           </div>
                                         );
                                       })}
@@ -2405,9 +2540,13 @@ export default function GeospatialEngine() {
                           }}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-amber-300 flex items-center gap-2`}>
-                            <Sparkles size={14} className="text-amber-400" /> AI Insights
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-amber-300 flex items-center gap-2`}>
+                              <Sparkles size={14} className="text-amber-400" /> AI Insights
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-amber-500/15 text-amber-400/50 ml-2">GloFAS v4 + ERA5</span>
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Natural language situation analysis</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showAiInsights ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2421,32 +2560,36 @@ export default function GeospatialEngine() {
                                 )}
                                 {nlgSummary && !nlgLoading && (
                                   <>
-                                    <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line">
+                                    <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
+                                    <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
                                       {nlgSummary.narrative.split('**').map((part, i) =>
                                         i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
                                       )}
                                     </div>
-                                    <div className="flex flex-col gap-1.5">
+
+                                    <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5 mt-3">KEY FINDINGS</div>
+                                    <div className="flex flex-col gap-1.5 -mt-1">
                                       {nlgSummary.highlights.map((h, i) => (
-                                        <div key={i} className="flex items-start gap-2 text-[12px] font-mono text-gray-400">
-                                          <span className="text-amber-400 mt-0.5">▸</span>
+                                        <div key={i} className="flex items-start gap-2 text-[13px] font-sans text-gray-300 leading-relaxed">
+                                          <span className="text-amber-500/60 mt-0.5">—</span>
                                           {h}
                                         </div>
                                       ))}
                                     </div>
+                                    
                                     {nlgSummary.trend_narrative && (
-                                      <div className="bg-[#151A22] rounded-lg p-3 border border-white/5">
-                                        <div className="text-[12px] text-gray-300 leading-relaxed font-sans">
+                                      <>
+                                        <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5 mt-3">TREND</div>
+                                        <div className="text-[13px] text-gray-300 leading-relaxed font-sans -mt-1">
                                           {nlgSummary.trend_narrative.split('**').map((part, i) =>
                                             i % 2 === 1 ? <strong key={i} className="text-white">{part}</strong> : <span key={i}>{part}</span>
                                           )}
                                         </div>
-                                      </div>
+                                      </>
                                     )}
-                                    <div className="flex items-center gap-2 text-[11px] text-gray-600 font-mono">
-                                      <span className={`px-1.5 py-0.5 rounded text-[10px] border ${nlgSummary.engine === 'gpt-4o-mini' ? 'border-emerald-500/30 text-emerald-400' : 'border-gray-600 text-gray-500'}`}>
-                                        {nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4' : '⚙ Template'}
-                                      </span>
+
+                                    <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
+                                      <span>{nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4o' : '⚙ Template Model'}</span>
                                       <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                                     </div>
                                   </>
@@ -2472,9 +2615,12 @@ export default function GeospatialEngine() {
                           }}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
-                            <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-cyan-300 flex items-center gap-2`}>
+                              <Radio size={14} className="text-cyan-400" /> Multi-Source Analysis
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Adaptive optical & radar sensor fusion</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFusion ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2557,9 +2703,12 @@ export default function GeospatialEngine() {
                           }}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
-                            <Shield size={14} className="text-rose-400" /> Compound Risk
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-rose-300 flex items-center gap-2`}>
+                              <Shield size={14} className="text-rose-400" /> Compound Risk
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Cascading multi-hazard interactions</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showCompound ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2635,9 +2784,12 @@ export default function GeospatialEngine() {
                           }}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
-                            <DollarSign size={14} className="text-emerald-400" /> Financial Impact
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-emerald-300 flex items-center gap-2`}>
+                              <DollarSign size={14} className="text-emerald-400" /> Financial Impact
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Estimated economic exposure & ROI</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFinancial ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2704,9 +2856,12 @@ export default function GeospatialEngine() {
                           onClick={() => setShowFeedback(prev => !prev)}
                           className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-colors"
                         >
-                          <span className={`text-[13px] uppercase ${textMono} tracking-widest text-gray-400 flex items-center gap-2`}>
-                            <ThumbsUp size={14} className="text-gray-500" /> Model Feedback
-                          </span>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className={`text-[12px] font-medium uppercase ${textMono} tracking-widest text-gray-400 flex items-center gap-2`}>
+                              <ThumbsUp size={14} className="text-gray-500" /> Model Feedback
+                            </span>
+                            <span className="text-[10px] text-gray-600 font-mono mt-0.5">Help train the prediction engine</span>
+                          </div>
                           <ChevronRight size={14} className={`text-gray-500 transition-transform duration-300 ${showFeedback ? 'rotate-90' : ''}`} />
                         </button>
                         <AnimatePresence>
@@ -2761,15 +2916,25 @@ export default function GeospatialEngine() {
               </div>
 
               {/* Download Action */}
-              <div className="p-6 border-t border-white/10 bg-black/20">
+              <div className="p-4 border-t border-white/10 bg-black/40 backdrop-blur-md sticky bottom-0 z-20 flex gap-2 w-full">
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/ad-hoc?lat=${adHocLocation.lat}&lon=${adHocLocation.lon}`;
+                    navigator.clipboard.writeText(url);
+                  }}
+                  className="w-10 h-10 shrink-0 flex items-center justify-center bg-[#151A22] hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 rounded-lg transition-colors group"
+                  title="Copy link to this location"
+                >
+                  <Link size={14} className="group-hover:scale-110 transition-transform" />
+                </button>
                 <button
                   onClick={() => {
                     const reportUrl = `/api/reports/executive/0?lat=${adHocLocation.lat}&lon=${adHocLocation.lon}&name=${encodeURIComponent(adHocLocation.name)}`;
                     window.open(reportUrl, '_blank');
                   }}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[13px] uppercase tracking-widest border border-white/10 hover:border-[#00E5FF]/40 rounded-lg transition-colors group"
+                  className="flex-1 flex items-center justify-center gap-2 h-10 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[12px] uppercase tracking-widest border border-white/10 hover:border-[#00E5FF]/40 rounded-lg transition-colors group"
                 >
-                  <Download size={14} className="text-gray-400 group-hover:text-[#00E5FF]" /> Download Structured Report
+                  <Download size={14} className="text-gray-400 group-hover:text-[#00E5FF]" /> PDF Report
                 </button>
               </div>
             </div>
