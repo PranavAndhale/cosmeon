@@ -102,17 +102,17 @@ The platform is anchored around three core **Analysis Orbs**:
 │                          │  • /api/discharge/{id}                │
 ├──────────────────────────┴───────────────────────────────────────┤
 │            ML PIPELINE — TieredFloodPredictor                    │
-│  XGBoost + LightGBM 55/45 Ensemble  •  SHAP  •  ARIMA           │
-│  GloFAS T1→T4 Tiered Fallback  •  threading.Lock  •  SMOTE      │
+│  XGBoost + LightGBM 55/45 Ensemble  •  SHAP  •  ARIMA            │
+│  GloFAS T1→T4 Tiered Fallback  •  threading.Lock  •  SMOTE       │
 ├──────────────────────────────────────────────────────────────────┤
 │          INTELLIGENCE ENGINES                                    │
 │  CompoundRiskEngine (INFORM/EU JRC)  •  FinancialImpactEngine    │
-│  (JRC Depth-Damage + UNDRR Sendai)  •  ForecastEngine (ARIMA)   │
-│  NLGEngine (GPT-4o-mini)  •  ReportGenerator (ReportLab)        │
+│  (JRC Depth-Damage + UNDRR Sendai)  •  ForecastEngine (ARIMA)    │
+│  NLGEngine (GPT-4o-mini)  •  ReportGenerator (ReportLab)         │
 ├──────────────────────────────────────────────────────────────────┤
 │          SATELLITE & CLIMATE DATA LAYER                          │
-│  GloFAS v4 (Copernicus)  •  ERA5 via Open-Meteo  •  FAO-56 ET₀  │
-│  Sentinel-1 SAR  •  Sentinel-2 NDVI  •  MODIS Land Cover        │
+│  GloFAS v4 (Copernicus)  •  ERA5 via Open-Meteo  •  FAO-56 ET₀   │
+│  Sentinel-1 SAR  •  Sentinel-2 NDVI  •  MODIS Land Cover         │
 │  World Bank GDP + Population  •  Open-Meteo DEM Elevation        │
 ├──────────────────────────────────────────────────────────────────┤
 │              DATABASE (SQLite via SQLAlchemy)                    │
