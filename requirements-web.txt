@@ -29,3 +29,4 @@ PyJWT>=2.8.0
 
 # Logging
 structlog>=23.1.0
+reportlab>=4.0
