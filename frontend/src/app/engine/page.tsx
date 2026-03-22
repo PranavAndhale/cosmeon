@@ -243,6 +243,7 @@ export default function GeospatialEngine() {
   const [financialLoading, setFinancialLoading] = useState(false);
   const [showFinancial, setShowFinancial] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // ── Ad-hoc Location State ──
   const [adHocLocation, setAdHocLocation] = useState<{ lat: number; lon: number; name: string } | null>(null);
@@ -527,9 +528,7 @@ export default function GeospatialEngine() {
       const regData = await fetchRegions();
       if (regData?.regions) {
         setRegions(regData.regions);
-        if (regData.regions.length > 0) {
-          setSelectedRegion(regData.regions[0]);
-        }
+        // Don't auto-select here — URL param effect below handles initial selection
       }
       const logData = await fetchLogs(60);
       if (logData?.logs) setLogs(logData.logs.reverse());
@@ -537,6 +536,27 @@ export default function GeospatialEngine() {
     }
     load();
   }, []);
+
+  // ── Restore state from URL params (after regions load) ──
+  useEffect(() => {
+    if (regions.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const regionId = params.get('region');
+    const lat = params.get('lat');
+    const lon = params.get('lon');
+    const name = params.get('name');
+    if (regionId) {
+      const reg = regions.find(r => r.id === parseInt(regionId));
+      if (reg) { selectRegion(reg); return; }
+    }
+    if (lat && lon) {
+      analyzeAdHocLocation(parseFloat(lat), parseFloat(lon), name || undefined);
+      return;
+    }
+    // No URL params — fall back to selecting first region
+    selectRegion(regions[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regions]);
 
   // ── Reusable function to load all region data ──
   const loadRegionData = useCallback(async (region: Region, autoAnalyze = false) => {
@@ -1999,12 +2019,16 @@ export default function GeospatialEngine() {
               <div className="p-4 border-t border-white/10 bg-[#0B1320] flex gap-2 shrink-0">
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    // Optional: user could add toast, but simple copy suffices
+                    const url = `${window.location.origin}${window.location.pathname}?region=${selectedRegion.id}`;
+                    navigator.clipboard.writeText(url);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
                   }}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[11px] uppercase tracking-widest border border-white/10 hover:border-cyan-500/40 rounded-lg transition-colors group"
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-[#151A22] hover:bg-white/10 font-mono text-[11px] uppercase tracking-widest border rounded-lg transition-colors group border-white/10 hover:border-cyan-500/40"
+                  style={{ color: linkCopied ? '#22c55e' : 'white', borderColor: linkCopied ? 'rgba(34,197,94,0.4)' : undefined }}
                 >
-                  <Share2 size={14} className="text-gray-400 group-hover:text-cyan-400 transition-colors" /> Copy Link
+                  <Share2 size={14} className="transition-colors" style={{ color: linkCopied ? '#22c55e' : undefined }} />
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
                 </button>
                 <a href={selectedRegion ? getReportDownloadUrl(selectedRegion.id) : '#'} target="_blank" rel="noopener noreferrer"
                   className="flex-[2] flex items-center justify-center gap-2 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-mono text-[11px] uppercase tracking-widest border border-cyan-500/30 hover:border-cyan-400/50 rounded-lg transition-colors group">
@@ -2927,10 +2951,14 @@ export default function GeospatialEngine() {
               <div className="p-4 border-t border-white/10 bg-black/40 backdrop-blur-md sticky bottom-0 z-20 flex gap-2 w-full">
                 <button
                   onClick={() => {
-                    const url = `${window.location.origin}/ad-hoc?lat=${adHocLocation.lat}&lon=${adHocLocation.lon}`;
+                    const params = new URLSearchParams({ lat: String(adHocLocation.lat), lon: String(adHocLocation.lon), name: adHocLocation.name });
+                    const url = `${window.location.origin}${window.location.pathname}?${params}`;
                     navigator.clipboard.writeText(url);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
                   }}
-                  className="w-10 h-10 shrink-0 flex items-center justify-center bg-[#151A22] hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 rounded-lg transition-colors group"
+                  className="w-10 h-10 shrink-0 flex items-center justify-center bg-[#151A22] hover:bg-white/10 border border-white/10 rounded-lg transition-colors group"
+                  style={{ color: linkCopied ? '#22c55e' : '#9ca3af', borderColor: linkCopied ? 'rgba(34,197,94,0.4)' : undefined }}
                   title="Copy link to this location"
                 >
                   <Link size={14} className="group-hover:scale-110 transition-transform" />
