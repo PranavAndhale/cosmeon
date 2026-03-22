@@ -95,6 +95,7 @@ class CompoundRiskEngine:
         gdp_usd: float = 50e9,
         lat: float = 0.0,
         lon: float = 0.0,
+        discharge_anomaly_sigma: float = 0.0,
     ) -> CompoundRiskResult:
         """
         Compute INFORM-based compound risk from multiple hazard layers.
@@ -103,17 +104,20 @@ class CompoundRiskEngine:
             Risk = (Hazard × Exposure × Vulnerability)^(1/3)
 
         All inputs come from established sources (ERA5, GloFAS, World Bank, FAO-56).
+        discharge_anomaly_sigma: raw GloFAS sigma anomaly — used to boost flood hazard
+        when discharge is extreme even if ML probability is moderate.
         """
         result = CompoundRiskResult(timestamp=datetime.utcnow().isoformat())
 
         # ── HAZARD DIMENSION (0–10) ──────────────────────────────────────────
-        # Flood hazard: from GloFAS/live detection flood probability
-        # Note: flood_confidence measures DETECTION certainty (1.0 = confident),
-        # NOT flood severity. Only flood_probability drives the hazard score.
-        # Confidence is used to weight the signal reliability (high confidence
-        # means we trust the probability more).
+        # Flood hazard: primary from TieredFloodPredictor probability (GloFAS v4 + ERA5 ML)
+        # Boosted by raw GloFAS discharge anomaly when sigma is extreme (>2σ).
+        # confidence_weight: detection certainty (1.0 = confident signal)
         flood_sev = flood_probability
-        confidence_weight = max(0.5, min(1.0, flood_confidence))  # reliable detection → trust the probability
+        confidence_weight = max(0.5, min(1.0, flood_confidence))
+        # Apply discharge anomaly boost: >2σ is anomalous regardless of ML probability
+        discharge_boost = min(0.20, max(0.0, (discharge_anomaly_sigma - 1.0) / 10.0))
+        flood_sev = min(1.0, flood_sev + discharge_boost)
         flood_hazard_10 = min(10.0, flood_sev * 10.0 * confidence_weight)
 
         # Precipitation hazard: based on 7-day rainfall intensity
@@ -182,8 +186,19 @@ class CompoundRiskEngine:
             severity=flood_sev,
             weight=0.35,  # informational
             status=self._severity_status(flood_sev),
-            description=f"Flood probability: {flood_sev:.0%}" +
+            description=f"ML flood probability: {flood_probability:.0%} (TieredFloodPredictor + GloFAS v4)" +
                         (f", rainfall: {rainfall_7d_mm:.0f}mm/7d" if rainfall_7d_mm > 0 else ""),
+        ))
+
+        discharge_sev = min(1.0, max(0.0, discharge_anomaly_sigma / 4.0))
+        layers.append(HazardLayer(
+            name="river_discharge",
+            severity=discharge_sev,
+            weight=0.15,
+            status=self._severity_status(discharge_sev),
+            description=f"GloFAS v4 river discharge: {discharge_anomaly_sigma:+.2f}σ anomaly" +
+                        (" — extreme" if discharge_anomaly_sigma > 2.5 else
+                         " — elevated" if discharge_anomaly_sigma > 1.0 else " — normal"),
         ))
 
         heat_sev = min(1.0, max(0.0, thermal_anomaly / 5.0))
