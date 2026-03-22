@@ -322,7 +322,8 @@ def download_report(region_id: int):
 def _gather_pdf_data(lat: float, lon: float, region_name: str,
                      region_id: Optional[int] = None,
                      risk_dict: Optional[dict] = None,
-                     history: Optional[list] = None) -> dict:
+                     history: Optional[list] = None,
+                     total_area_km2: Optional[float] = None) -> dict:
     """
     Fetch all data needed for PDF in parallel using ThreadPoolExecutor.
     Each call has a 12-second timeout so a slow API never blocks the server.
@@ -376,8 +377,8 @@ def _gather_pdf_data(lat: float, lon: float, region_name: str,
         from processing.model_hub import get_economic_data, get_river_discharge
         flood_prob = det_data.get("pred", {}).get("flood_probability", 0.1)
         risk_level = det_data.get("pred", {}).get("predicted_risk_level", "MEDIUM")
-        # Use region area from bbox if available, else estimate
-        total_area = abs(risk_dict.get("total_area_km2", 0)) or 5000.0
+        # Use bbox-derived area passed in — same formula as /api/financial/{region_id}
+        total_area = total_area_km2 or 5000.0
         flood_area = total_area * flood_prob
         econ = get_economic_data(lat, lon, region_name)
         discharge_data = get_river_discharge(lat, lon)
@@ -464,9 +465,11 @@ def download_report_pdf(region_id: int):
     if not region:
         raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
 
+    import math as _math
     bbox = region.bbox
     lat = (bbox[1] + bbox[3]) / 2
     lon = (bbox[0] + bbox[2]) / 2
+    bbox_area_km2 = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * _math.cos(_math.radians(lat))
 
     risk    = db.get_latest_risk(region_id)
     history = db.get_risk_history(region_id, limit=10)
@@ -475,7 +478,8 @@ def download_report_pdf(region_id: int):
     data = _gather_pdf_data(lat, lon, region.name,
                             region_id=region_id,
                             risk_dict=risk_dict,
-                            history=[h.to_dict() for h in history])
+                            history=[h.to_dict() for h in history],
+                            total_area_km2=bbox_area_km2)
 
     try:
         pdf_bytes = ReportGenerator().generate_pdf(
@@ -514,9 +518,12 @@ def download_location_report_pdf(
     """Generate and stream a PDF flood risk report for any lat/lon location."""
     from processing.report_generator import ReportGenerator
 
+    import math as _math
     region_name = name or f"{lat:.4f}°N, {lon:.4f}°E"
+    # Same area estimate as /api/financial/location — 100×100km around the point
+    point_area_km2 = 100.0 * 100.0 * _math.cos(_math.radians(lat))
 
-    data = _gather_pdf_data(lat, lon, region_name)
+    data = _gather_pdf_data(lat, lon, region_name, total_area_km2=point_area_km2)
 
     try:
         pdf_bytes = ReportGenerator().generate_pdf(
