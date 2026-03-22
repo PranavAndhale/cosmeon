@@ -47,7 +47,7 @@ The platform is anchored around three core **Analysis Orbs**:
 - **Deterministic Compound Scorer** — aggregates outputs from GloFAS v4, ERA5, ECMWF IFS soil moisture, and regional historical records into a calibrated flood probability and risk level. No custom model training required; predictions are available instantly on startup
 - **Tiered GloFAS v4 Fallback (T1 → T4)** — attempts four progressively broader GloFAS API queries (point → 0.1° → 0.25° → 0.5° radius) before falling back to ERA5-only mode, ensuring data availability for any global location
 - **Calibrated Risk Levels** — GloFAS flood risk levels are mapped to real flood probabilities (e.g. GloFAS HIGH → ~62% probability) using empirically tuned baselines, then compounded with ERA5 precipitation anomaly and soil saturation signals
-- **SHAP-Style Explainability** — every prediction ships a ranked feature importance breakdown with human-readable influence labels (`INCREASES RISK` / `DECREASES RISK`) so analysts always know *why* a risk level was assigned
+- **Feature Attribution Explainability** — every prediction ships a ranked breakdown of the top contributing signals with human-readable influence labels (`INCREASES RISK` / `DECREASES RISK`) and importance scores so analysts always know *why* a risk level was assigned
 
 ### 📡 Data Integration
 
@@ -68,7 +68,7 @@ The platform is anchored around three core **Analysis Orbs**:
 - **NLG Summaries** — template-based narrative generation for all deployments; optionally integrates with OpenAI GPT for richer prose when `OPENAI_API_KEY` is configured
 - **Prediction Explainability Panel** — interactive breakdown of the top contributing signals (GloFAS v4 discharge, ERA5 precipitation, soil saturation, historical baseline) with a consensus confidence score showing how many independent sources agree with the model's conclusion
 - **Automated Change Detection** — calculates temporal deltas between baseline and current state per registered region, quantifying km² gained/lost per period
-- **Human-in-the-Loop Feedback** — analysts can verify or correct predictions, queuing labelled data for the next re-training epoch
+- **Human-in-the-Loop Feedback** — analysts can submit accuracy verdicts (correct / incorrect) on predictions; feedback is stored and tracked via `/api/feedback/stats`
 
 ### 🗺️ Navigation & UX
 
@@ -102,7 +102,7 @@ The platform is anchored around three core **Analysis Orbs**:
 ├──────────────────────────┴───────────────────────────────────────┤
 │            TIERED FLOOD PREDICTOR                                │
 │  GloFAS T1→T4 Tiered Fallback  •  ERA5 Compound Scorer          │
-│  ECMWF IFS Soil Moisture  •  SHAP Explainability                 │
+│  ECMWF IFS Soil Moisture  •  Feature Attribution Drivers         │
 ├──────────────────────────────────────────────────────────────────┤
 │          INTELLIGENCE ENGINES                                    │
 │  CompoundRiskEngine (INFORM/EU JRC)  •  FinancialImpactEngine    │
@@ -160,16 +160,6 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:3000`.
-
----
-
-## 🐳 Docker (Full Stack)
-
-```bash
-docker-compose up --build
-```
-
-This spins up the backend + frontend as a single unified service.
 
 ---
 
@@ -235,8 +225,6 @@ Every push to `main` triggers an automatic redeploy on Render. The production bu
 | FastAPI | REST API framework |
 | SQLAlchemy | ORM + query builder |
 | SQLite | Lightweight production database |
-| scikit-learn | Feature scaling, sample weighting utilities |
-| SHAP | Feature attribution and explainability |
 | NumPy | Compound scoring, seasonal decomposition, trend projection |
 | ReportLab | Server-side PDF report generation |
 | OpenAI SDK | Optional GPT NLG integration (template-based fallback if not configured) |
@@ -259,7 +247,6 @@ Every push to `main` triggers an automatic redeploy on Render. The production bu
 | UNDRR Sendai Framework | Indirect cost ratios by income class |
 | UNHCR Displacement Cost Brackets | Population displacement financial estimates |
 | FAO-56 Penman-Monteith | Vegetation stress / ET₀ water balance |
-| TCFD | Climate financial disclosure framing |
 
 ---
 
