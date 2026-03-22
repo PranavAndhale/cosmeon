@@ -1260,17 +1260,21 @@ export default function GeospatialEngine() {
 
                 {/* Prediction Block */}
                 {prediction && (
-                  <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2 transition-all duration-700 relative overflow-hidden group" style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 15px ${riskColor(prediction.predicted_risk_level)}20` : 'none' }}>
-                    <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(prediction.predicted_risk_level) + '1A', top: '-20px', right: '-20px' }} />
-                    <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2"><Activity size={12} className="text-gray-400" /> ML PREDICTION</span>
-                    <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(prediction.predicted_risk_level), textShadow: `0 0 12px ${riskColor(prediction.predicted_risk_level)}66` }}>
-                      {prediction.predicted_risk_level} RISK DETECTED
-                    </span>
-                    <span className="text-[13px] font-mono text-gray-400 z-10">
-                      {(prediction.flood_probability * 100).toFixed(0)}% probability · {(prediction.confidence * 100).toFixed(0)}% confidence
-                    </span>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">Model: GradientBoosting_v2.1 · {timeAgo((prediction as any).prediction_time ?? latestRisk.timestamp)}</span>
+                  <div className={`bg-[#151A22]/80 border rounded-xl p-3 flex flex-col gap-1 transition-all duration-700 relative overflow-hidden group ${['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? 'animate-[pulse_4s_ease-in-out_infinite]' : ''}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 15px ${riskColor(prediction.predicted_risk_level)}20` : 'none' }}>
+                    <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(prediction.predicted_risk_level ?? 'LOW') + '1A', top: '-20px', right: '-20px' }} />
+                    <div className="flex items-center justify-between z-10">
+                      <span className="text-[10px] font-medium font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1.5"><Activity size={10} className="text-gray-400" /> ML PREDICTION</span>
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      <span className="text-[9px] text-gray-600 font-mono">Model: {(prediction as any).model_version || 'GradientBoosting_v2'}</span>
+                    </div>
+                    <div className="flex items-center justify-between z-10">
+                      <span className="text-[18px] font-bold font-mono uppercase tracking-widest" style={{ color: riskColor(prediction.predicted_risk_level ?? 'LOW'), textShadow: `0 0 12px ${riskColor(prediction.predicted_risk_level ?? 'LOW')}66` }}>
+                        {(prediction.predicted_risk_level ?? 'UNKNOWN')} RISK
+                      </span>
+                      <span className="text-[11px] font-mono text-gray-400">
+                        {((prediction.flood_probability ?? 0) * 100).toFixed(1)}% prob · {((prediction.confidence ?? 0) * 100).toFixed(1)}% conf
+                      </span>
+                    </div>
                   </div>
                 )}
 
@@ -2180,17 +2184,20 @@ export default function GeospatialEngine() {
 
                       {/* ML Prediction */}
                       {pred && (
-                        <div className="bg-[#151A22]/80 border rounded-xl p-4 flex flex-col gap-2 transition-all duration-700 relative overflow-hidden group" style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level) ? riskColor(pred.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level) ? `0 0 15px ${riskColor(pred.predicted_risk_level)}20` : 'none' }}>
-                          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(pred.predicted_risk_level) + '1A', top: '-20px', right: '-20px' }} />
-                          <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2"><Activity size={12} className="text-gray-400" /> ML PREDICTION</span>
-                          <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(pred.predicted_risk_level), textShadow: `0 0 12px ${riskColor(pred.predicted_risk_level)}66` }}>
-                            {pred.predicted_risk_level} RISK DETECTED
-                          </span>
-                          <span className="text-[13px] font-mono text-gray-400 z-10">
-                            {(pred.flood_probability * 100).toFixed(0)}% probability · {(pred.confidence * 100).toFixed(0)}% confidence
-                          </span>
-                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                          <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">Model: {pred.model_version || 'GradientBoosting_v2.1'} · {timeAgo((pred as any).prediction_time ?? undefined)}</span>
+                        <div className={`bg-[#151A22]/80 border rounded-xl p-3 flex flex-col gap-1 transition-all duration-700 relative overflow-hidden group ${['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? 'animate-[pulse_4s_ease-in-out_infinite]' : ''}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? riskColor(pred.predicted_risk_level ?? pred.risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? `0 0 15px ${riskColor(pred.predicted_risk_level ?? pred.risk_level)}20` : 'none' }}>
+                          <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors" style={{ backgroundColor: riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW') + '1A', top: '-20px', right: '-20px' }} />
+                          <div className="flex items-center justify-between z-10">
+                            <span className="text-[10px] font-medium font-mono uppercase tracking-widest text-gray-500 flex items-center gap-1.5"><Activity size={10} className="text-gray-400" /> ML PREDICTION</span>
+                            <span className="text-[9px] text-gray-600 font-mono">Model: {pred.model_version || 'GradientBoosting_v2'}</span>
+                          </div>
+                          <div className="flex items-center justify-between z-10">
+                            <span className="text-[18px] font-bold font-mono uppercase tracking-widest" style={{ color: riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW'), textShadow: `0 0 12px ${riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW')}66` }}>
+                              {(pred.predicted_risk_level ?? pred.risk_level ?? 'UNKNOWN')} RISK
+                            </span>
+                            <span className="text-[11px] font-mono text-gray-400">
+                              {((pred.flood_probability ?? pred.probability ?? 0) * 100).toFixed(1)}% prob · {((pred.confidence ?? 0) * 100).toFixed(1)}% conf
+                            </span>
+                          </div>
                         </div>
                       )}
 
