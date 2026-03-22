@@ -1260,21 +1260,21 @@ export default function GeospatialEngine() {
 
                 {/* Prediction Block */}
                 {prediction && (
-                  <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative overflow-hidden group ${['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 15px ${riskColor(prediction.predicted_risk_level)}20` : 'none' }}>
+                  <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative group shrink-0 ${['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 20px ${riskColor(prediction.predicted_risk_level)}33` : 'none' }}>
                     <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors z-0" style={{ backgroundColor: riskColor(prediction.predicted_risk_level) + '1A', top: '-20px', right: '-20px' }} />
-                    <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2">
+                    <div className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 relative flex items-center gap-2">
                       <Activity size={12} className="text-gray-400" /> ML PREDICTION
-                    </span>
-                    <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(prediction.predicted_risk_level), textShadow: `0 0 12px ${riskColor(prediction.predicted_risk_level)}66` }}>
+                    </div>
+                    <div className="text-[20px] font-bold font-mono uppercase tracking-widest z-10 relative drop-shadow-md" style={{ color: riskColor(prediction.predicted_risk_level), textShadow: `0 0 12px ${riskColor(prediction.predicted_risk_level)}66` }}>
                       {prediction.predicted_risk_level} RISK DETECTED
-                    </span>
-                    <span className="text-[13px] font-mono text-gray-400 z-10">
+                    </div>
+                    <div className="text-[13px] font-mono text-gray-400 z-10 relative">
                       {(prediction.flood_probability * 100).toFixed(0)}% probability · {(prediction.confidence * 100).toFixed(0)}% confidence
-                    </span>
+                    </div>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">
+                    <div className="text-[9px] text-gray-600 font-mono mt-2 z-10 relative border-t border-white/5 pt-2">
                       Model: {(prediction as any).model_version || 'GradientBoosting_v2.1'}
-                    </span>
+                    </div>
                   </div>
                 )}
 
@@ -2184,20 +2184,21 @@ export default function GeospatialEngine() {
 
                       {/* ML Prediction */}
                       {pred && (
-                        <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative overflow-hidden group ${['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? riskColor(pred.predicted_risk_level ?? pred.risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? `0 0 15px ${riskColor(pred.predicted_risk_level ?? pred.risk_level)}20` : 'none' }}>
+                        <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative group shrink-0 ${['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? riskColor(pred.predicted_risk_level ?? pred.risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? `0 0 20px ${riskColor(pred.predicted_risk_level ?? pred.risk_level)}33` : 'none' }}>
                           <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-[40px] transition-colors z-0" style={{ backgroundColor: riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW') + '1A', top: '-20px', right: '-20px' }} />
-                          <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 flex items-center gap-2">
+                          <div className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1 z-10 relative flex items-center gap-2">
                             <Activity size={12} className="text-gray-400" /> ML PREDICTION
-                          </span>
-                          <span className="text-[20px] font-bold font-mono uppercase tracking-widest z-10" style={{ color: riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW'), textShadow: `0 0 12px ${riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW')}66` }}>
+                          </div>
+                          <div className="text-[20px] font-bold font-mono uppercase tracking-widest z-10 relative drop-shadow-md" style={{ color: riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW'), textShadow: `0 0 12px ${riskColor(pred.predicted_risk_level ?? pred.risk_level ?? 'LOW')}66` }}>
                             {(pred.predicted_risk_level ?? pred.risk_level ?? 'UNKNOWN')} RISK DETECTED
-                          </span>
-                          <span className="text-[13px] font-mono text-gray-400 z-10">
+                          </div>
+                          <div className="text-[13px] font-mono text-gray-400 z-10 relative">
                             {((pred.flood_probability ?? pred.probability ?? 0) * 100).toFixed(0)}% probability · {((pred.confidence ?? 0) * 100).toFixed(0)}% confidence
-                          </span>
-                          <span className="text-[9px] text-gray-600 font-mono mt-2 z-10 border-t border-white/5 pt-2">
-                            Model: {pred.model_version || 'GradientBoosting_v2.1'}
-                          </span>
+                          </div>
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                          <div className="text-[9px] text-gray-600 font-mono mt-2 z-10 relative border-t border-white/5 pt-2">
+                            Model: {(pred as any).model_version || 'GradientBoosting_v2.1'}
+                          </div>
                         </div>
                       )}
 
