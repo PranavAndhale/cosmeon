@@ -90,6 +90,16 @@ export function getReportDownloadUrl(regionId: number) {
     return `${API}/reports/${regionId}/download`;
 }
 
+export function getReportPdfUrl(regionId: number) {
+    return `${API}/reports/${regionId}/pdf`;
+}
+
+export function getLocationReportPdfUrl(lat: number, lon: number, name?: string) {
+    const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+    if (name) params.set('name', name);
+    return `${API}/reports/location/pdf?${params}`;
+}
+
 export async function analyzeLocation(lat: number, lon: number, name?: string) {
     try {
         const res = await fetch(`${API}/analyze/location`, {

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown, Droplets, CloudRain, Mountain, BarChart3, Share2, Link } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, getReportPdfUrl, getLocationReportPdfUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus } from "@/lib/api";
 import { BarChart, Bar } from "recharts";
 
 // ─── Types ───
@@ -2030,7 +2030,7 @@ export default function GeospatialEngine() {
                   <Share2 size={14} className="transition-colors" style={{ color: linkCopied ? '#22c55e' : undefined }} />
                   {linkCopied ? 'Copied!' : 'Copy Link'}
                 </button>
-                <a href={selectedRegion ? getReportDownloadUrl(selectedRegion.id) : '#'} target="_blank" rel="noopener noreferrer"
+                <a href={selectedRegion ? getReportPdfUrl(selectedRegion.id) : '#'} target="_blank" rel="noopener noreferrer"
                   className="flex-[2] flex items-center justify-center gap-2 py-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-mono text-[11px] uppercase tracking-widest border border-cyan-500/30 hover:border-cyan-400/50 rounded-lg transition-colors group">
                   <Download size={14} className="text-cyan-500 group-hover:text-cyan-400 transition-colors" /> PDF Report
                 </a>
@@ -2963,15 +2963,13 @@ export default function GeospatialEngine() {
                 >
                   <Link size={14} className="group-hover:scale-110 transition-transform" />
                 </button>
-                <button
-                  onClick={() => {
-                    const reportUrl = `/api/reports/executive/0?lat=${adHocLocation.lat}&lon=${adHocLocation.lon}&name=${encodeURIComponent(adHocLocation.name)}`;
-                    window.open(reportUrl, '_blank');
-                  }}
+                <a
+                  href={getLocationReportPdfUrl(adHocLocation.lat, adHocLocation.lon, adHocLocation.name)}
+                  target="_blank" rel="noopener noreferrer"
                   className="flex-1 flex items-center justify-center gap-2 h-10 bg-[#151A22] hover:bg-white/10 text-white font-mono text-[12px] uppercase tracking-widest border border-white/10 hover:border-[#00E5FF]/40 rounded-lg transition-colors group"
                 >
                   <Download size={14} className="text-gray-400 group-hover:text-[#00E5FF]" /> PDF Report
-                </button>
+                </a>
               </div>
             </div>
           </motion.div>

@@ -319,6 +319,244 @@ def download_report(region_id: int):
     )
 
 
+@app.get("/api/reports/{region_id}/pdf")
+def download_report_pdf(region_id: int):
+    """Generate and stream a PDF flood risk report for a registered region."""
+    from fastapi.responses import Response as FastResponse
+    from processing.report_generator import ReportGenerator
+
+    region = db.get_region(region_id)
+    if not region:
+        raise HTTPException(status_code=404, detail=f"Region {region_id} not found")
+
+    bbox = region.bbox
+    lat = (bbox[1] + bbox[3]) / 2
+    lon = (bbox[0] + bbox[2]) / 2
+
+    # Gather all available data in parallel where possible
+    risk = db.get_latest_risk(region_id)
+    history = db.get_risk_history(region_id, limit=10)
+
+    risk_dict = risk.to_dict() if risk else {}
+
+    # Live prediction + explanation
+    expl_dict = {}
+    try:
+        expl = predictor.explain_prediction(
+            [h.to_dict() for h in history],
+            {"_lat": lat, "_lon": lon},
+            region.name,
+        )
+        if expl:
+            expl_dict = {"ml_prediction": expl}
+    except Exception:
+        pass
+
+    # Prediction fallback
+    pred_dict = {}
+    try:
+        from processing.live_analysis import LiveAnalysisEngine
+        det = analysis_engine.analyze_by_coords(lat, lon, region.name)
+        pred_dict = {
+            "predicted_risk_level": det.risk_level,
+            "flood_probability": det.flood_probability,
+            "confidence": det.confidence_score,
+        }
+    except Exception:
+        pass
+
+    # Discharge
+    dis_dict = {}
+    try:
+        det_full = analysis_engine.analyze_by_coords(lat, lon, region.name)
+        dis_dict = {
+            "current_discharge_m3s": det_full.river_discharge_m3s,
+            "mean_discharge_m3s": det_full.mean_discharge_m3s,
+            "discharge_anomaly_sigma": det_full.discharge_anomaly_sigma,
+            "flood_risk_level": det_full.risk_level,
+        }
+    except Exception:
+        pass
+
+    # Forecast
+    fcast_dict = {}
+    try:
+        engine = _get_forecast_engine()
+        fcast_dict = engine.generate_forecast(lat=lat, lon=lon, region_name=region.name,
+                                               horizon_months=6, region_id=region_id)
+    except Exception:
+        pass
+
+    # Compound risk
+    comp_dict = {}
+    try:
+        comp_result = _get_compound().compute_compound_risk(
+            flood_probability=pred_dict.get("flood_probability", 0),
+            flood_confidence=pred_dict.get("confidence", 0),
+            region_name=region.name, lat=lat, lon=lon,
+        )
+        comp_dict = comp_result.to_dict()
+    except Exception:
+        pass
+
+    # Financial
+    fin_dict = {}
+    try:
+        from processing.model_hub import get_economic_data
+        econ = get_economic_data(lat, lon, region.name)
+        fin_dict = {"total_impact_usd": econ.get("gdp_usd", 0) * 0.02,
+                    "affected_population": int(econ.get("pop_density_km2", 0) * 50)}
+    except Exception:
+        pass
+
+    # NLG
+    nlg_dict = {}
+    try:
+        from processing.nlg_engine import NLGEngine
+        nlg_engine = NLGEngine()
+        nlg_result = nlg_engine.generate_summary(
+            region_name=region.name, risk_level=risk_dict.get("risk_level", "UNKNOWN"),
+            probability=pred_dict.get("flood_probability", 0),
+            confidence=pred_dict.get("confidence", 0),
+            contributing_factors=expl_dict.get("ml_prediction", {}).get("feature_values", {}),
+        )
+        nlg_dict = nlg_result if isinstance(nlg_result, dict) else {}
+    except Exception:
+        pass
+
+    gen = ReportGenerator()
+    try:
+        pdf_bytes = gen.generate_pdf(
+            region_name=region.name,
+            lat=lat, lon=lon,
+            risk_data=risk_dict,
+            prediction_data=pred_dict,
+            explanation_data=expl_dict,
+            forecast_data=fcast_dict,
+            compound_data=comp_dict,
+            financial_data=fin_dict,
+            nlg_data=nlg_dict,
+            discharge_data=dis_dict,
+        )
+    except Exception as e:
+        logger.exception("PDF generation failed for region %s", region_id)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+    safe_name = region.name.replace(" ", "_").replace("/", "-")
+    return FastResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="cosmeon_{safe_name}_report.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/reports/location/pdf")
+def download_location_report_pdf(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    name: Optional[str] = Query(None),
+):
+    """Generate and stream a PDF flood risk report for any lat/lon location."""
+    from fastapi.responses import Response as FastResponse
+    from processing.report_generator import ReportGenerator
+
+    region_name = name or f"{lat:.4f}°N, {lon:.4f}°E"
+
+    # Gather data
+    pred_dict, expl_dict, dis_dict, fcast_dict, comp_dict, fin_dict, nlg_dict = {}, {}, {}, {}, {}, {}, {}
+
+    try:
+        det = analysis_engine.analyze_by_coords(lat, lon, region_name)
+        pred_dict = {
+            "predicted_risk_level": det.risk_level,
+            "flood_probability": det.flood_probability,
+            "confidence": det.confidence_score,
+        }
+        dis_dict = {
+            "current_discharge_m3s": det.river_discharge_m3s,
+            "mean_discharge_m3s": det.mean_discharge_m3s,
+            "discharge_anomaly_sigma": det.discharge_anomaly_sigma,
+            "flood_risk_level": det.risk_level,
+        }
+    except Exception:
+        pass
+
+    try:
+        expl = predictor.explain_prediction([], {"_lat": lat, "_lon": lon}, region_name)
+        if expl:
+            expl_dict = {"ml_prediction": expl}
+    except Exception:
+        pass
+
+    try:
+        engine = _get_forecast_engine()
+        fcast_dict = engine.generate_forecast(lat=lat, lon=lon, region_name=region_name, horizon_months=6)
+    except Exception:
+        pass
+
+    try:
+        comp_result = _get_compound().compute_compound_risk(
+            flood_probability=pred_dict.get("flood_probability", 0),
+            flood_confidence=pred_dict.get("confidence", 0),
+            discharge_anomaly_sigma=dis_dict.get("discharge_anomaly_sigma", 0),
+            region_name=region_name, lat=lat, lon=lon,
+        )
+        comp_dict = comp_result.to_dict()
+    except Exception:
+        pass
+
+    try:
+        from processing.model_hub import get_economic_data
+        econ = get_economic_data(lat, lon, region_name)
+        fin_dict = {"total_impact_usd": econ.get("gdp_usd", 0) * 0.02,
+                    "affected_population": int(econ.get("pop_density_km2", 0) * 50)}
+    except Exception:
+        pass
+
+    try:
+        from processing.nlg_engine import NLGEngine
+        nlg_engine = NLGEngine()
+        nlg_result = nlg_engine.generate_summary(
+            region_name=region_name, risk_level=pred_dict.get("predicted_risk_level", "UNKNOWN"),
+            probability=pred_dict.get("flood_probability", 0),
+            confidence=pred_dict.get("confidence", 0),
+            contributing_factors=expl_dict.get("ml_prediction", {}).get("feature_values", {}),
+        )
+        nlg_dict = nlg_result if isinstance(nlg_result, dict) else {}
+    except Exception:
+        pass
+
+    gen = ReportGenerator()
+    try:
+        pdf_bytes = gen.generate_pdf(
+            region_name=region_name,
+            lat=lat, lon=lon,
+            prediction_data=pred_dict,
+            explanation_data=expl_dict,
+            forecast_data=fcast_dict,
+            compound_data=comp_dict,
+            financial_data=fin_dict,
+            nlg_data=nlg_dict,
+            discharge_data=dis_dict,
+        )
+    except Exception as e:
+        logger.exception("PDF generation failed for location %s,%s", lat, lon)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+    safe_name = (name or f"{lat:.2f}_{lon:.2f}").replace(" ", "_").replace("/", "-")
+    return FastResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="cosmeon_{safe_name}_report.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 # --- Processing Logs ---
 
 @app.get("/api/logs")
