@@ -2052,7 +2052,7 @@ export default function GeospatialEngine() {
                   <div className="flex flex-col gap-1">
                     {adHocData ? (
                       (() => {
-                        const liveLevel = adHocData.prediction?.predicted_risk_level ?? adHocData.detection?.detected_risk_level ?? 'LOW';
+                        const liveLevel = adHocData.prediction?.predicted_risk_level ?? 'LOW';
                         const displayLevel = activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? liveLevel) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? liveLevel) : liveLevel;
                         return (
                           <span className={`text-[16px] uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(displayLevel), textShadow: `0 0 12px ${riskColor(displayLevel)}66` }}>
@@ -2071,7 +2071,7 @@ export default function GeospatialEngine() {
                     )}
                     <span className="text-white text-[15px] font-semibold mt-1 flex items-center justify-between">
                       <span>{adHocLocation.name} — {currentOrb.panelTitle}</span>
-                      {adHocData?.detection?.timestamp && <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase truncate ml-2">Last assessed: Just now</span>}
+                      {adHocData && <span className="text-[10px] text-gray-500 font-mono tracking-widest uppercase truncate ml-2">Last assessed: Just now</span>}
                     </span>
                   </div>
                   <button onClick={() => { setAdHocLocation(null); setAdHocData(null); setAdHocExplanation(null); setAdHocTrendData(null); setForecastData(null); setNlgSummary(null); setShowForecast(false); setShowAiInsights(false); setFusionData(null); setCompoundData(null); setFinancialData(null); setShowFusion(false); setShowCompound(false); setShowFinancial(false); setShowFeedback(false); }} className="text-gray-500 hover:text-white"><X size={18} /></button>
@@ -2087,62 +2087,50 @@ export default function GeospatialEngine() {
                 )}
 
                 {adHocData && !adHocLoading && (() => {
-                  const det = adHocData.detection;
                   const pred = adHocData.prediction;
-                  const val = adHocData.validation;
+                  const dis  = adHocData.discharge || {};
+                  const disAnomaly: number = dis.anomaly_sigma ?? 0;
+                  const disCurrentM3s: number = dis.current_discharge_m3s ?? 0;
                   return (
                     <>
-                      {/* Data Grid — matches active region */}
-                      {det && (
+                      {/* Data Grid */}
+                      {pred && (
                         <div className="grid grid-cols-3 gap-3">
                           <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
-                            <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">FLOOD AREA</span>
-                            <span className="text-[18px] font-bold font-mono text-white">{det.flood_area_km2?.toFixed(0) || '—'} km²</span>
+                            <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">DISCHARGE</span>
+                            <span className="text-[18px] font-bold font-mono text-white">{disCurrentM3s > 0 ? disCurrentM3s.toFixed(0) : '—'} <span className="text-[11px] text-gray-500">m³/s</span></span>
                             <div className="flex items-center gap-2 mt-1">
                               <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
-                                <div className="h-full transition-all duration-700 ease-out" style={{ width: `${Math.min((det.flood_probability ?? 0) * 500, 100)}%`, backgroundColor: riskColor(det.detected_risk_level) }} />
+                                <div className="h-full transition-all duration-700 ease-out" style={{ width: `${Math.min(Math.abs(disAnomaly) * 25, 100)}%`, backgroundColor: disAnomaly > 1.5 ? '#ef4444' : disAnomaly > 0.8 ? '#f97316' : '#22c55e' }} />
                               </div>
-                              <span className="text-[10px] font-mono text-gray-400">{((det.flood_probability ?? 0) * 100).toFixed(1)}%</span>
+                              <span className={`text-[10px] font-mono ${disAnomaly > 1 ? 'text-red-400' : 'text-emerald-400'}`}>{disAnomaly >= 0 ? '+' : ''}{disAnomaly.toFixed(1)}σ</span>
                             </div>
                           </div>
                           <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
                             <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">RISK PROB.</span>
-                            {pred ? (
-                              <>
-                                <span className="text-[18px] font-bold font-mono text-white">{(pred.flood_probability * 100).toFixed(0)}%</span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
-                                    <div className="h-full transition-all duration-700 ease-out" style={{ width: `${pred.flood_probability * 100}%`, backgroundColor: riskColor(pred.predicted_risk_level) }} />
-                                  </div>
-                                  <span className="text-[10px] font-mono" style={{ color: riskColor(pred.predicted_risk_level) }}>{pred.predicted_risk_level}</span>
-                                </div>
-                              </>
-                            ) : (
-                              <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
-                            )}
+                            <span className="text-[18px] font-bold font-mono text-white">{(pred.flood_probability * 100).toFixed(0)}%</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                                <div className="h-full transition-all duration-700 ease-out" style={{ width: `${pred.flood_probability * 100}%`, backgroundColor: riskColor(pred.predicted_risk_level) }} />
+                              </div>
+                              <span className="text-[10px] font-mono" style={{ color: riskColor(pred.predicted_risk_level) }}>{pred.predicted_risk_level}</span>
+                            </div>
                           </div>
                           <div className="bg-[#151A22]/80 rounded-xl p-3 flex flex-col gap-1">
                             <span className="text-[10px] uppercase tracking-widest text-gray-500 font-mono">CONFIDENCE</span>
-                            {pred ? (
-                              <>
-                                <span className="text-[18px] font-bold font-mono text-white">{(pred.confidence * 100).toFixed(0)}%</span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
-                                    <div className="h-full transition-all duration-700 ease-out bg-cyan-400" style={{ width: `${pred.confidence * 100}%` }} />
-                                  </div>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  <span className="text-[10px] font-mono text-cyan-400">T{((pred as any).feature_values?.glofas_flood_risk) ? Math.min(Math.round((pred as any).feature_values.glofas_flood_risk), 3) : 2}</span>
-                                </div>
-                              </>
-                            ) : (
-                              <span className="text-[18px] font-bold font-mono text-gray-600 opacity-50">--</span>
-                            )}
+                            <span className="text-[18px] font-bold font-mono text-white">{(pred.confidence * 100).toFixed(0)}%</span>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="h-[3px] flex-1 bg-[#1a1f2e] rounded-full overflow-hidden">
+                                <div className="h-full transition-all duration-700 ease-out bg-cyan-400" style={{ width: `${pred.confidence * 100}%` }} />
+                              </div>
+                              <span className="text-[10px] font-mono text-cyan-400">GloFAS v4</span>
+                            </div>
                           </div>
                         </div>
                       )}
 
-                      {/* Assessment Details — matches active region */}
-                      {det && (
+                      {/* Assessment Details */}
+                      {pred && (
                         <div className="flex flex-col gap-2">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500">Assessment Details</span>
@@ -2154,7 +2142,7 @@ export default function GeospatialEngine() {
                               {orbAssessmentLoading && activeOrb !== 'flood' ? (
                                 <span className="text-gray-500 text-[16px] font-mono">loading...</span>
                               ) : (() => {
-                                const valPct = activeOrb === 'infra' && orbAssessment?.infra ? orbAssessment.infra.exposure_score * 100 : activeOrb === 'veg' && orbAssessment?.veg ? orbAssessment.veg.stress_index * 100 : (det.flood_probability ?? 0) * 100;
+                                const valPct = activeOrb === 'infra' && orbAssessment?.infra ? orbAssessment.infra.exposure_score * 100 : activeOrb === 'veg' && orbAssessment?.veg ? orbAssessment.veg.stress_index * 100 : pred.flood_probability * 100;
                                 const col = valPct > 10 ? 'text-red-400' : valPct > 5 ? 'text-orange-400' : valPct > 2 ? 'text-yellow-400' : 'text-emerald-400';
                                 return (
                                   <>
@@ -2168,8 +2156,8 @@ export default function GeospatialEngine() {
                             <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
                               <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Water Change</span>
                               <div className="flex items-center gap-2">
-                                <span className={`text-[16px] font-bold font-mono ${det.discharge_anomaly_sigma > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{det.discharge_anomaly_sigma > 0 ? '+' : ''}{(det.discharge_anomaly_sigma * 10).toFixed(1)}%</span>
-                                <span className={`text-[10px] font-mono ${det.discharge_anomaly_sigma > 0 ? 'text-red-400' : det.discharge_anomaly_sigma < 0 ? 'text-emerald-400' : 'text-gray-500'}`}>{det.discharge_anomaly_sigma > 0 ? '▲ expanding' : det.discharge_anomaly_sigma < 0 ? '▼ receding' : '→ stable'}</span>
+                                <span className={`text-[16px] font-bold font-mono ${disAnomaly > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{disAnomaly > 0 ? '+' : ''}{(disAnomaly * 10).toFixed(1)}%</span>
+                                <span className={`text-[10px] font-mono ${disAnomaly > 0 ? 'text-red-400' : disAnomaly < 0 ? 'text-emerald-400' : 'text-gray-500'}`}>{disAnomaly > 0 ? '▲ expanding' : disAnomaly < 0 ? '▼ receding' : '→ stable'}</span>
                               </div>
                             </div>
 
@@ -2187,14 +2175,14 @@ export default function GeospatialEngine() {
                             )}
 
                             <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
-                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Total Area</span>
-                              <span className="text-[16px] font-bold font-mono text-white">{det.flood_area_km2?.toFixed(0) || '—'} km²</span>
+                              <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">GloFAS Risk</span>
+                              <span className="text-[16px] font-bold font-mono" style={{ color: riskColor(dis.flood_risk_level || pred.predicted_risk_level) }}>{dis.flood_risk_level || pred.predicted_risk_level}</span>
                             </div>
 
                             <div className="bg-[#151A22]/60 hover:bg-[#151A22]/80 transition-colors duration-200 rounded-lg p-3 flex flex-col">
                               <span className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Discharge Anomaly</span>
-                              <span className={`text-[16px] font-bold font-mono ${det.discharge_anomaly_sigma > 2 ? 'text-red-400' : det.discharge_anomaly_sigma > 1 ? 'text-orange-400' : det.discharge_anomaly_sigma > 0.5 ? 'text-yellow-400' : 'text-emerald-400'}`}>{det.discharge_anomaly_sigma >= 0 ? '+' : ''}{det.discharge_anomaly_sigma.toFixed(1)}σ</span>
-                              <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${det.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : 'text-emerald-400'}`} style={{ width: `${Math.min(Math.abs(det.discharge_anomaly_sigma) * 25, 100)}%` }} /></div>
+                              <span className={`text-[16px] font-bold font-mono ${disAnomaly > 2 ? 'text-red-400' : disAnomaly > 1 ? 'text-orange-400' : disAnomaly > 0.5 ? 'text-yellow-400' : 'text-emerald-400'}`}>{disAnomaly >= 0 ? '+' : ''}{disAnomaly.toFixed(1)}σ</span>
+                              <div className={`h-[2px] rounded-full mt-2 w-full bg-[#1a1f2e]`}><div className={`h-full transition-all duration-700 ease-out bg-current ${disAnomaly > 1.5 ? 'text-red-400' : 'text-emerald-400'}`} style={{ width: `${Math.min(Math.abs(disAnomaly) * 25, 100)}%` }} /></div>
                             </div>
                           </div>
                           
@@ -2226,40 +2214,6 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
-                      {/* Automated Detection */}
-                      {det && (
-                        <div className="bg-[#0A1628]/90 border rounded-xl p-4 flex flex-col gap-3" style={{ borderColor: riskColor(det.detected_risk_level) + '40' }}>
-                          <span className={`text-[13px] text-gray-500 uppercase ${textMono} flex items-center gap-2`}>
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" /> Automated Detection
-                          </span>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[13px] text-gray-400 font-mono">Detected Risk</span>
-                            <span className="text-[15px] font-bold font-mono" style={{ color: riskColor(det.detected_risk_level) }}>{det.detected_risk_level}</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] font-mono">
-                            <span className="text-gray-500">River Discharge</span>
-                            <span className="text-right text-cyan-400">{det.river_discharge_m3s} m³/s</span>
-                            <span className="text-gray-500">Discharge Anomaly</span>
-                            <span className={`text-right ${det.discharge_anomaly_sigma > 1.5 ? 'text-red-400' : det.discharge_anomaly_sigma > 0.8 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                              {det.discharge_anomaly_sigma > 0 ? '+' : ''}{det.discharge_anomaly_sigma}σ
-                            </span>
-                            <span className="text-gray-500">7-Day Rainfall</span>
-                            <span className="text-right text-blue-400">{det.rainfall_7d_mm} mm</span>
-                            <span className="text-gray-500">Forecast Rain</span>
-                            <span className="text-right text-blue-300">{det.rainfall_forecast_mm} mm</span>
-                            <span className="text-gray-500">Elevation</span>
-                            <span className="text-right text-gray-400">{det.elevation_m} m</span>
-                            <span className="text-gray-500">Confidence</span>
-                            <span className="text-right text-gray-400">{(det.confidence_score * 100).toFixed(0)}%</span>
-                          </div>
-                          {det.alert_triggered && (
-                            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-[13px] text-red-300 font-mono">
-                              {det.alert_message}
-                            </div>
-                          )}
-                          <div className="text-[12px] text-gray-600 font-mono">Sources: {det.data_sources?.join(', ')}</div>
-                        </div>
-                      )}
 
                       {/* Prediction Explainability Button */}
                       <button
@@ -2901,14 +2855,14 @@ export default function GeospatialEngine() {
                             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                               <div className="px-4 pb-4 flex flex-col gap-3">
                                 <div className="text-[12px] text-gray-500 font-mono">
-                                  Was the flood detection for {adHocLocation.name} accurate?
+                                  Was the ML prediction for {adHocLocation.name} accurate?
                                 </div>
                                 <div className="flex gap-2">
                                   <button
                                     onClick={async () => {
                                       await submitFeedback({
                                         detection_type: 'flood',
-                                        model_prediction: pred?.predicted_risk_level || det?.detected_risk_level || 'UNKNOWN',
+                                        model_prediction: pred?.predicted_risk_level || 'UNKNOWN',
                                         user_verdict: 'correct',
                                         location: { lat: adHocLocation.lat, lon: adHocLocation.lon, name: adHocLocation.name },
                                       });
@@ -2922,7 +2876,7 @@ export default function GeospatialEngine() {
                                     onClick={async () => {
                                       await submitFeedback({
                                         detection_type: 'flood',
-                                        model_prediction: pred?.predicted_risk_level || det?.detected_risk_level || 'UNKNOWN',
+                                        model_prediction: pred?.predicted_risk_level || 'UNKNOWN',
                                         user_verdict: 'incorrect',
                                         location: { lat: adHocLocation.lat, lon: adHocLocation.lon, name: adHocLocation.name },
                                       });
