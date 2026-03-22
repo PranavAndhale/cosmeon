@@ -3169,8 +3169,8 @@ export default function GeospatialEngine() {
                         </div>
                       </div>
                       <div className="bg-[#151A22] border border-white/5 rounded-xl p-5">
-                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-1">Heavy Rain Days (&gt;20mm)</h3>
-                        <p className="text-[9px] font-mono text-gray-600 mb-3">ERA5 reanalysis daily precipitation</p>
+                        <h3 className="text-[12px] font-mono uppercase tracking-widest text-gray-400 mb-1">Heavy Rain Days (&gt;20mm/day)</h3>
+                        <p className="text-[9px] font-mono text-gray-600 mb-3">Days where single-day ERA5 precipitation exceeded 20mm</p>
                         <div className="h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={trendData.trend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
