@@ -334,19 +334,27 @@ def _gather_pdf_data(lat: float, lon: float, region_name: str,
     history = history or []
     risk_dict = risk_dict or {}
 
-    def _get_detection():
-        det = analysis_engine.analyze_by_coords(lat, lon, region_name)
+    def _get_pred_and_dis():
+        """Use ML predictor + direct GloFAS — same sources as the website."""
+        from processing.model_hub import get_river_discharge
+        from concurrent.futures import ThreadPoolExecutor as _Pool
+        with _Pool(max_workers=2) as p:
+            f_ml  = p.submit(predictor.predict_by_coords, lat, lon, region_name)
+            f_dis = p.submit(get_river_discharge, lat, lon, 7)
+            ml_result  = f_ml.result()
+            dis_result = f_dis.result()
+        ml_dict = ml_result.to_dict() if hasattr(ml_result, "to_dict") else (ml_result or {})
         return {
             "pred": {
-                "predicted_risk_level": det.risk_level,
-                "flood_probability": det.flood_probability,
-                "confidence": det.confidence_score,
+                "predicted_risk_level": ml_dict.get("predicted_risk_level", "UNKNOWN"),
+                "flood_probability":    ml_dict.get("flood_probability", 0.0),
+                "confidence":           ml_dict.get("confidence", 0.0),
             },
             "dis": {
-                "current_discharge_m3s": det.river_discharge_m3s,
-                "mean_discharge_m3s": det.mean_discharge_m3s,
-                "discharge_anomaly_sigma": det.discharge_anomaly_sigma,
-                "flood_risk_level": det.risk_level,
+                "current_discharge_m3s":    dis_result.get("current_discharge_m3s"),
+                "mean_discharge_m3s":       dis_result.get("mean_discharge_m3s"),
+                "discharge_anomaly_sigma":  dis_result.get("anomaly_sigma", 0.0),
+                "flood_risk_level":         dis_result.get("flood_risk_level"),
             },
         }
 
@@ -398,20 +406,20 @@ def _gather_pdf_data(lat: float, lon: float, region_name: str,
         )
         return result if isinstance(result, dict) else {}
 
-    # Run detection, explanation and forecast in parallel (all hit external APIs)
+    # Run prediction, explanation and forecast in parallel (all hit external APIs)
     out = {"pred": {}, "expl": {}, "dis": {}, "fcast": {}, "comp": {}, "fin": {}, "nlg": {}}
-    det_data = {}
+    pred_data = {}
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        f_det   = pool.submit(_get_detection)
+        f_pred  = pool.submit(_get_pred_and_dis)
         f_expl  = pool.submit(_get_expl)
         f_fcast = pool.submit(_get_fcast)
 
-        for key, future in [("det", f_det), ("expl", f_expl), ("fcast", f_fcast)]:
+        for key, future in [("pred", f_pred), ("expl", f_expl), ("fcast", f_fcast)]:
             try:
                 result = future.result(timeout=12)
-                if key == "det":
-                    det_data = result
+                if key == "pred":
+                    pred_data = result
                     out["pred"] = result.get("pred", {})
                     out["dis"]  = result.get("dis", {})
                 elif key == "expl":
@@ -434,7 +442,7 @@ def _gather_pdf_data(lat: float, lon: float, region_name: str,
         pass
 
     try:
-        out["fin"] = _get_fin(det_data)
+        out["fin"] = _get_fin(pred_data)
     except Exception:
         pass
 
@@ -2080,30 +2088,16 @@ def get_financial_impact(region_id: int):
         bbox = region.bbox
         lat, lon = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
 
-        # Prefer live detection data (freshest), fall back to DB risk
-        latest_det = analysis_engine.get_latest_detection(region_id)
-        risk = db.get_latest_risk(region_id)
+        # Use ML predictor — same source as the website risk panel
+        ml_result = predictor.predict_by_coords(lat, lon, region.name)
+        ml_dict = ml_result.to_dict() if hasattr(ml_result, "to_dict") else (ml_result or {})
+        flood_prob = ml_dict.get("flood_probability", 0.1)
+        risk_level = ml_dict.get("predicted_risk_level", "MEDIUM")
 
-        if latest_det and latest_det.get("flood_area_km2", 0) > 0:
-            flood_area = latest_det["flood_area_km2"]
-            total_area = latest_det["total_area_km2"]
-            flood_prob = latest_det["flood_probability"]
-            risk_level = latest_det["detected_risk_level"]
-        elif risk:
-            flood_area = risk.flood_area_km2
-            total_area = risk.total_area_km2
-            flood_prob = risk.flood_percentage if risk.flood_percentage else 0.1
-            risk_level = risk.risk_level
-            if (flood_area == 0 or total_area == 0):
-                lat_mid = (bbox[1] + bbox[3]) / 2
-                total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
-                flood_area = total_area * flood_prob
-        else:
-            lat_mid = (bbox[1] + bbox[3]) / 2
-            total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
-            flood_prob = 0.1
-            flood_area = total_area * flood_prob
-            risk_level = "MEDIUM"
+        # Compute total area from bbox; cap flood area proportionally
+        lat_mid = (bbox[1] + bbox[3]) / 2
+        total_area = abs(bbox[3] - bbox[1]) * 111 * abs(bbox[2] - bbox[0]) * 111 * math.cos(math.radians(lat_mid))
+        flood_area = total_area * flood_prob
 
         # World Bank economic data + GloFAS discharge for JRC depth estimation
         econ = get_economic_data(lat, lon, region.name)
@@ -2145,12 +2139,15 @@ def financial_impact_location(body: LocationRequest):
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
 
-        # Live detection for flood geometry
-        detection  = analysis_engine.analyze_by_coords(lat, lon, name)
-        flood_prob = detection.flood_probability
-        total_area = detection.total_area_km2
-        flood_area = detection.flood_area_km2
-        risk_level = detection.detected_risk_level
+        # Use ML predictor — same source as the website risk panel
+        import math as _math
+        ml_result = predictor.predict_by_coords(lat, lon, name)
+        ml_dict   = ml_result.to_dict() if hasattr(ml_result, "to_dict") else (ml_result or {})
+        flood_prob = ml_dict.get("flood_probability", 0.1)
+        risk_level = ml_dict.get("predicted_risk_level", "MEDIUM")
+        # Estimate area from a ~100km bounding box around the point
+        total_area = 100.0 * 100.0 * _math.cos(_math.radians(lat))
+        flood_area = total_area * flood_prob
 
         # ── Tiered economic data (World Bank) ──
         econ = get_economic_data(lat, lon, name)
