@@ -201,19 +201,14 @@ def get_situation_all():
             summary["normal"] += 1
             continue
 
-        # Trend: compare latest vs previous assessment
+        # Fetch prediction signals (live) for classification
         history = db.get_risk_history(region.id, limit=2)
         prev_risk_level = history[1].risk_level if len(history) >= 2 else None
-        risk_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
-        curr_val = risk_order.get(risk.risk_level, 0)
-        prev_val = risk_order.get(prev_risk_level, 0) if prev_risk_level else curr_val
-        trend = "escalating" if curr_val > prev_val else "improving" if curr_val < prev_val else "stable"
-
-        # Fetch prediction signals for classification
         discharge_anomaly = 0.0
         precip_anomaly = 0.0
         soil_saturation = 0.0
         contributing_factors: dict = {}
+        live_risk_level = risk.risk_level  # fallback to DB value if live call fails
         try:
             bbox = region.bbox
             lat = (bbox[1] + bbox[3]) / 2
@@ -229,8 +224,9 @@ def get_situation_all():
                 precip_anomaly = fv.get("precip_anomaly", 0.0)
                 soil_saturation = fv.get("soil_saturation", 0.0)
             if expl:
+                live_risk_level = expl.get("risk_level", risk.risk_level)
                 contributing_factors = {
-                    "risk_level": expl.get("risk_level"),
+                    "risk_level": live_risk_level,
                     "probability": expl.get("probability"),
                     "confidence": expl.get("confidence"),
                     "discharge_anomaly_sigma": round(discharge_anomaly, 2),
@@ -241,8 +237,14 @@ def get_situation_all():
         except Exception as e:
             logger.warning("Situation explain failed for region %s: %s", region.id, e)
 
+        # Trend: compare live prediction vs previous DB assessment
+        risk_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+        curr_val = risk_order.get(live_risk_level, 0)
+        prev_val = risk_order.get(prev_risk_level, 0) if prev_risk_level else curr_val
+        trend = "escalating" if curr_val > prev_val else "improving" if curr_val < prev_val else "stable"
+
         situation = _classify_situation(
-            risk.risk_level, prev_risk_level,
+            live_risk_level, prev_risk_level,
             discharge_anomaly, precip_anomaly, soil_saturation,
         )
         summary[situation.lower()] = summary.get(situation.lower(), 0) + 1
@@ -251,7 +253,7 @@ def get_situation_all():
             "id": region.id,
             "name": region.name,
             "bbox": region.bbox,
-            "risk_level": risk.risk_level,
+            "risk_level": live_risk_level,
             "situation_status": situation,
             "flood_area_km2": risk.flood_area_km2,
             "flood_percentage": risk.flood_percentage,
