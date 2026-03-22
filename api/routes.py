@@ -147,6 +147,128 @@ def get_regions_by_risk(level: str = Query(default="HIGH", description="Risk lev
     }
 
 
+# --- Situation Overview ---
+
+def _classify_situation(
+    risk_level: str,
+    prev_risk_level: Optional[str],
+    discharge_anomaly: float,
+    precip_anomaly: float,
+    soil_saturation: float,
+) -> str:
+    """Classify the operational flood situation into one of 5 states."""
+    high_levels = {"HIGH", "CRITICAL"}
+    # Active flooding: currently high AND was high before AND river elevated
+    if risk_level in high_levels and prev_risk_level in high_levels and discharge_anomaly > 1.5:
+        return "FLOODING_NOW"
+    # Imminent: just escalated to high, or high with discharge rising
+    if risk_level in high_levels and (prev_risk_level not in high_levels or discharge_anomaly > 1.0):
+        return "IMMINENT"
+    # Receding: was high, now dropped
+    if risk_level not in high_levels and prev_risk_level in high_levels:
+        return "RECEDING"
+    # Watch: medium risk with building conditions
+    if risk_level == "MEDIUM" and (precip_anomaly > 0.5 or soil_saturation > 0.5):
+        return "WATCH"
+    return "NORMAL"
+
+
+@app.get("/api/situation/all")
+def get_situation_all():
+    """
+    Cross-region situation overview with temporal state classification.
+    Returns all regions ranked by severity with situation_status, trend,
+    and key contributing factors in a single call.
+    """
+    regions = db.get_all_regions()
+    results = []
+    summary = {
+        "flooding_now": 0, "imminent": 0, "watch": 0,
+        "receding": 0, "normal": 0, "total": len(regions),
+    }
+
+    for region in regions:
+        risk = db.get_latest_risk(region.id)
+        if not risk:
+            results.append({
+                "id": region.id, "name": region.name, "bbox": region.bbox,
+                "risk_level": "UNKNOWN", "situation_status": "NORMAL",
+                "flood_area_km2": 0, "flood_percentage": 0,
+                "confidence_score": 0, "discharge_anomaly_sigma": 0.0,
+                "trend": "stable", "last_assessed": None,
+                "contributing_factors": {},
+            })
+            summary["normal"] += 1
+            continue
+
+        # Trend: compare latest vs previous assessment
+        history = db.get_risk_history(region.id, limit=2)
+        prev_risk_level = history[1].risk_level if len(history) >= 2 else None
+        risk_order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+        curr_val = risk_order.get(risk.risk_level, 0)
+        prev_val = risk_order.get(prev_risk_level, 0) if prev_risk_level else curr_val
+        trend = "escalating" if curr_val > prev_val else "improving" if curr_val < prev_val else "stable"
+
+        # Fetch prediction signals for classification
+        discharge_anomaly = 0.0
+        precip_anomaly = 0.0
+        soil_saturation = 0.0
+        contributing_factors: dict = {}
+        try:
+            bbox = region.bbox
+            lat = (bbox[1] + bbox[3]) / 2
+            lon = (bbox[0] + bbox[2]) / 2
+            expl = predictor.explain_prediction(
+                [h.to_dict() for h in history],
+                {"_lat": lat, "_lon": lon},
+                region.name,
+            )
+            if expl and "feature_values" in expl:
+                fv = expl["feature_values"]
+                discharge_anomaly = fv.get("discharge_anomaly_sigma", 0.0)
+                precip_anomaly = fv.get("precip_anomaly", 0.0)
+                soil_saturation = fv.get("soil_saturation", 0.0)
+            if expl:
+                contributing_factors = {
+                    "risk_level": expl.get("risk_level"),
+                    "probability": expl.get("probability"),
+                    "confidence": expl.get("confidence"),
+                    "discharge_anomaly_sigma": round(discharge_anomaly, 2),
+                    "precip_anomaly": round(precip_anomaly, 2),
+                    "soil_saturation": round(soil_saturation, 3),
+                    "model_inputs_source": expl.get("model_inputs_source", ""),
+                }
+        except Exception as e:
+            logger.warning("Situation explain failed for region %s: %s", region.id, e)
+
+        situation = _classify_situation(
+            risk.risk_level, prev_risk_level,
+            discharge_anomaly, precip_anomaly, soil_saturation,
+        )
+        summary[situation.lower()] = summary.get(situation.lower(), 0) + 1
+
+        results.append({
+            "id": region.id,
+            "name": region.name,
+            "bbox": region.bbox,
+            "risk_level": risk.risk_level,
+            "situation_status": situation,
+            "flood_area_km2": risk.flood_area_km2,
+            "flood_percentage": risk.flood_percentage,
+            "confidence_score": risk.confidence_score,
+            "discharge_anomaly_sigma": round(discharge_anomaly, 2),
+            "trend": trend,
+            "last_assessed": str(risk.timestamp) if risk.timestamp else None,
+            "contributing_factors": contributing_factors,
+        })
+
+    # Sort: CRITICAL first, then HIGH, then by flood area descending
+    risk_sort = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
+    results.sort(key=lambda r: (risk_sort.get(r["risk_level"], 4), -r["flood_area_km2"]))
+
+    return {"regions": results, "summary": summary}
+
+
 # --- Change Events ---
 
 @app.get("/api/changes")

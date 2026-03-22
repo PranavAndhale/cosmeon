@@ -337,6 +337,41 @@ export async function geocodeSearch(query: string): Promise<GeoResult[]> {
     }
 }
 
+// === Situation Overview ===
+
+export type SituationStatus = 'FLOODING_NOW' | 'IMMINENT' | 'WATCH' | 'RECEDING' | 'NORMAL';
+
+export interface SituationRegion {
+    id: number;
+    name: string;
+    bbox: number[];
+    risk_level: string;
+    situation_status: SituationStatus;
+    flood_area_km2: number;
+    flood_percentage: number;
+    confidence_score: number;
+    discharge_anomaly_sigma: number;
+    trend: 'escalating' | 'stable' | 'improving';
+    last_assessed: string | null;
+    contributing_factors: Record<string, number | string>;
+}
+
+export interface SituationData {
+    regions: SituationRegion[];
+    summary: {
+        flooding_now: number;
+        imminent: number;
+        watch: number;
+        receding: number;
+        normal: number;
+        total: number;
+    };
+}
+
+export async function fetchSituation(): Promise<SituationData | null> {
+    return safeFetch(`${API}/situation/all`);
+}
+
 export async function reverseGeocode(lat: number, lon: number): Promise<{ display_name: string; short_name: string }> {
     try {
         const res = await fetch(`${API}/geocode/reverse?lat=${lat}&lon=${lon}`, { cache: 'no-store' });

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, fetchPrediction, fetchExternalFactors, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, fetchMe, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, triggerSchedulerNow, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationRegion, SituationStatus } from "@/lib/api";
 import { BarChart, Bar, LineChart, Line } from "recharts";
 
 // ─── Types ───
@@ -158,6 +158,47 @@ function centerOf(bbox: number[]) {
   return { lon: (bbox[0] + bbox[2]) / 2, lat: (bbox[1] + bbox[3]) / 2 };
 }
 
+function timeAgo(isoDate: string | null): string {
+  if (!isoDate) return 'Never';
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function situationMeta(status: SituationStatus) {
+  switch (status) {
+    case 'FLOODING_NOW': return { label: 'ACTIVE FLOODING', cls: 'bg-red-500/20 border-red-500/40 text-red-400', pulse: true };
+    case 'IMMINENT':     return { label: 'IMMINENT RISK',   cls: 'bg-orange-500/20 border-orange-500/40 text-orange-400', pulse: false };
+    case 'WATCH':        return { label: 'UNDER WATCH',     cls: 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400', pulse: false };
+    case 'RECEDING':     return { label: 'RECEDING',        cls: 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400', pulse: false };
+    default:             return { label: 'NORMAL',          cls: 'bg-gray-500/10 border-gray-600/30 text-gray-500', pulse: false };
+  }
+}
+
+function markerSizeForStatus(status: SituationStatus): number {
+  switch (status) {
+    case 'FLOODING_NOW': return 14;
+    case 'IMMINENT':     return 13;
+    case 'WATCH':        return 11;
+    case 'RECEDING':     return 10;
+    default:             return 9;
+  }
+}
+
+function markerColorForStatus(status: SituationStatus): string {
+  switch (status) {
+    case 'FLOODING_NOW': return '#ef4444';
+    case 'IMMINENT':     return '#f97316';
+    case 'WATCH':        return '#eab308';
+    case 'RECEDING':     return '#22d3ee';
+    default:             return '#4b5563';
+  }
+}
+
 // ═══════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════
@@ -251,6 +292,23 @@ export default function GeospatialEngine() {
   useEffect(() => {
     fetchSchedulerStatus().then(s => setSchedulerStatus(s));
     const interval = setInterval(() => fetchSchedulerStatus().then(s => setSchedulerStatus(s)), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Situation Board State ──
+  const [situationData, setSituationData] = useState<SituationData | null>(null);
+  const [situationLoading, setSituationLoading] = useState(false);
+
+  // Load situation data on mount, refresh every 5 minutes
+  useEffect(() => {
+    const load = async () => {
+      setSituationLoading(true);
+      const data = await fetchSituation();
+      if (data) setSituationData(data);
+      setSituationLoading(false);
+    };
+    load();
+    const interval = setInterval(load, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -610,23 +668,35 @@ export default function GeospatialEngine() {
           {regions.map(reg => {
             const { lon, lat } = centerOf(reg.bbox);
             const isSelected = selectedRegion?.id === reg.id;
+            const sitReg = situationData?.regions.find(r => r.id === reg.id);
+            const status: SituationStatus = sitReg?.situation_status ?? 'NORMAL';
+            const mColor = isSelected ? primaryColor : markerColorForStatus(status);
+            const mSize = markerSizeForStatus(status);
             return (
               <Marker key={reg.id} longitude={lon} latitude={lat} anchor="center">
-                <div
-                  className="w-6 h-6 rounded-full border-2 cursor-pointer transition-all duration-300 relative flex items-center justify-center"
-                  style={{
-                    backgroundColor: isSelected ? primaryColor : 'rgba(11,14,17,0.8)',
-                    borderColor: isSelected ? primaryColor : 'rgba(255,255,255,0.3)',
-                    boxShadow: isSelected ? `0 0 15px ${primaryColor}` : 'none',
-                  }}
-                  onClick={() => selectRegion(reg)}
-                  onMouseEnter={() => setHoverInfo(reg)}
-                  onMouseLeave={() => setHoverInfo(null)}
-                >
-                  {isSelected && (
-                    <div className="absolute -inset-2 rounded-full animate-ping opacity-30"
-                      style={{ border: `1px solid ${primaryColor}` }} />
-                  )}
+                <div className="flex flex-col items-center gap-0.5">
+                  <div
+                    className="rounded-full border-2 cursor-pointer transition-all duration-300 relative flex items-center justify-center"
+                    style={{
+                      width: mSize + 6,
+                      height: mSize + 6,
+                      backgroundColor: isSelected ? mColor : mColor + '30',
+                      borderColor: mColor,
+                      boxShadow: isSelected ? `0 0 15px ${mColor}` : status === 'FLOODING_NOW' ? `0 0 8px ${mColor}60` : 'none',
+                    }}
+                    onClick={() => selectRegion(reg)}
+                    onMouseEnter={() => setHoverInfo(reg)}
+                    onMouseLeave={() => setHoverInfo(null)}
+                  >
+                    {(isSelected || status === 'FLOODING_NOW') && (
+                      <div className="absolute -inset-2 rounded-full animate-ping opacity-25"
+                        style={{ border: `1px solid ${mColor}` }} />
+                    )}
+                  </div>
+                  <span className="text-[9px] font-mono text-gray-400 text-center leading-none max-w-[60px] truncate"
+                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                    {reg.name.split(',')[0]}
+                  </span>
                 </div>
               </Marker>
             );
@@ -879,18 +949,87 @@ export default function GeospatialEngine() {
             <ChevronDown size={12} className="text-gray-500" />
           </h2>
 
-          {/* Region List — filtered by search */}
-          <div className="flex flex-col gap-1.5 mb-6">
-            {filteredRegions.length === 0 && (
-              <div className="text-[13px] text-gray-500 font-mono p-3">No regions match &quot;{searchQuery}&quot;</div>
+          {/* ── Situation Board ── */}
+          <div className="flex flex-col gap-2 mb-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-1">
+              <span className={`text-[11px] uppercase ${textMono} tracking-widest text-gray-500`}>Situation Board</span>
+              {situationData && (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-400">
+                  {(situationData.summary.flooding_now + situationData.summary.imminent)} active / {situationData.summary.total}
+                </span>
+              )}
+            </div>
+
+            {/* Loading skeletons */}
+            {situationLoading && !situationData && (
+              <div className="flex flex-col gap-1.5 animate-pulse">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="bg-[#151A22]/80 rounded-lg p-3 h-[68px]" />
+                ))}
+              </div>
             )}
-            {filteredRegions.map(reg => (
+
+            {/* Empty state */}
+            {situationData && situationData.regions.length === 0 && (
+              <div className="text-[12px] text-gray-600 font-mono p-3">All regions nominal — no elevated risk detected</div>
+            )}
+
+            {/* Situation rows */}
+            {(situationData?.regions ?? [])
+              .filter(r => !searchQuery.trim() || r.name.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map(sit => {
+                const reg = regions.find(r => r.id === sit.id);
+                if (!reg) return null;
+                const isSelected = selectedRegion?.id === sit.id;
+                const sm = situationMeta(sit.situation_status);
+                const riskCol = riskColor(sit.risk_level);
+                const barWidth = Math.min(sit.flood_percentage * 500, 100); // scale: 20% flood = full bar
+                const trendArrow = sit.trend === 'escalating' ? '▲' : sit.trend === 'improving' ? '▼' : '→';
+                const trendCls = sit.trend === 'escalating' ? 'text-red-400' : sit.trend === 'improving' ? 'text-emerald-400' : 'text-gray-500';
+                return (
+                  <div
+                    key={sit.id}
+                    onClick={() => selectRegion(reg)}
+                    className={`rounded-lg border cursor-pointer transition-all overflow-hidden ${isSelected ? 'bg-white/5' : 'border-white/5 hover:bg-white/5'}`}
+                    style={{ borderColor: isSelected ? riskCol + '33' : undefined }}
+                  >
+                    {/* Severity bar */}
+                    <div className="w-full h-[3px] bg-[#0B0E11]">
+                      <div className="h-full transition-all duration-700" style={{ width: `${barWidth}%`, backgroundColor: riskCol }} />
+                    </div>
+                    <div className="p-2.5 flex flex-col gap-1">
+                      {/* Row 1: name + badge + trend */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[13px] font-mono truncate ${isSelected ? 'text-white' : 'text-gray-200'}`}>{sit.name}</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-mono font-bold" style={{ color: riskCol }}>{sit.risk_level}</span>
+                          <span className={`text-[11px] font-mono font-bold ${trendCls}`}>{trendArrow}</span>
+                        </div>
+                      </div>
+                      {/* Row 2: metrics + situation badge */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-mono text-gray-500 truncate">
+                          {sit.flood_area_km2.toFixed(0)} km² · {sit.discharge_anomaly_sigma >= 0 ? '+' : ''}{sit.discharge_anomaly_sigma.toFixed(1)}σ
+                        </span>
+                        {sit.situation_status !== 'NORMAL' && (
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sm.cls} ${sm.pulse ? 'animate-pulse' : ''}`}>
+                            {sm.label}
+                          </span>
+                        )}
+                      </div>
+                      {/* Row 3: timestamp */}
+                      <span className="text-[10px] font-mono text-gray-600">Updated {timeAgo(sit.last_assessed)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+            {/* Fallback: show plain list if situation data not loaded yet */}
+            {!situationData && !situationLoading && filteredRegions.map(reg => (
               <div key={reg.id} onClick={() => selectRegion(reg)} className={`p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3
-                ${selectedRegion?.id === reg.id ? 'bg-white/5' : 'border-white/5 hover:bg-white/5'}
-              `}
-                style={{
-                  borderColor: selectedRegion?.id === reg.id ? primaryColor + '33' : undefined,
-                }}
+                ${selectedRegion?.id === reg.id ? 'bg-white/5' : 'border-white/5 hover:bg-white/5'}`}
+                style={{ borderColor: selectedRegion?.id === reg.id ? primaryColor + '33' : undefined }}
               >
                 <MapPin size={14} style={{ color: selectedRegion?.id === reg.id ? primaryColor : '#6b7280' }} />
                 <span className={`text-[14px] ${textMono} ${selectedRegion?.id === reg.id ? 'text-white' : 'text-gray-400'}`}>{reg.name}</span>
@@ -940,13 +1079,25 @@ export default function GeospatialEngine() {
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
                     {latestRisk ? (
-                      <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
-                        <AlertTriangle size={16} />
-                        {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level} RISK
-                        <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
-                          {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : latestRisk.change_type}
+                      <>
+                        <span className={`text-sm uppercase tracking-widest ${textMono} font-bold flex items-center gap-2`} style={{ color: riskColor(activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level) }}>
+                          <AlertTriangle size={16} />
+                          {activeOrb === 'infra' ? (orbAssessment?.infra?.risk_level ?? latestRisk.risk_level) : activeOrb === 'veg' ? (orbAssessment?.veg?.risk_level ?? latestRisk.risk_level) : latestRisk.risk_level} RISK
+                          <span className="px-2 py-0.5 rounded text-[13px] border" style={{ borderColor: riskColor(latestRisk.risk_level) + '40', backgroundColor: riskColor(latestRisk.risk_level) + '20' }}>
+                            {activeOrb === 'infra' ? 'INFRA EXPOSURE' : activeOrb === 'veg' ? 'VEG STRESS' : latestRisk.change_type}
+                          </span>
                         </span>
-                      </span>
+                        {(() => {
+                          const sit = situationData?.regions.find(r => r.id === selectedRegion.id);
+                          if (!sit || sit.situation_status === 'NORMAL') return null;
+                          const sm = situationMeta(sit.situation_status);
+                          return (
+                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded border w-fit ${sm.cls} ${sm.pulse ? 'animate-pulse' : ''}`}>
+                              {sm.label}
+                            </span>
+                          );
+                        })()}
+                      </>
                     ) : (
                       <div className="animate-pulse flex items-center gap-2">
                         <div className="h-4 w-4 bg-gray-600 rounded" />
