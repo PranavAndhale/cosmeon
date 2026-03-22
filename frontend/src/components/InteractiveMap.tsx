@@ -105,7 +105,7 @@ export default function InteractiveMap({ regions, selectedRegionId, onRegionSele
                     }
 
                     const isSelected = selectedRegionId === region.id;
-                    const score = region.riskScore || Math.floor(Math.random() * 100);
+                    const score = region.riskScore || (region.id * 137 % 100);
 
                     return (
                         <Marker
