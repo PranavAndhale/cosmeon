@@ -101,17 +101,17 @@ The platform is anchored around three core **Analysis Orbs**:
 │                          │  • /api/nlg/summary                   │
 ├──────────────────────────┴───────────────────────────────────────┤
 │            TIERED FLOOD PREDICTOR                                │
-│  GloFAS T1→T4 Tiered Fallback  •  ERA5 Compound Scorer          │
+│  GloFAS T1→T4 Tiered Fallback  •  ERA5 Compound Scorer           │
 │  ECMWF IFS Soil Moisture  •  Feature Attribution Drivers         │
 ├──────────────────────────────────────────────────────────────────┤
 │          INTELLIGENCE ENGINES                                    │
 │  CompoundRiskEngine (INFORM/EU JRC)  •  FinancialImpactEngine    │
-│  (JRC Depth-Damage + UNDRR Sendai)  •  ForecastEngine           │
-│  NLGEngine (template + optional GPT)  •  ReportGenerator (PDF)  │
+│  (JRC Depth-Damage + UNDRR Sendai)  •  ForecastEngine            │
+│  NLGEngine (template + optional GPT)  •  ReportGenerator (PDF)   │
 ├──────────────────────────────────────────────────────────────────┤
 │          SATELLITE & CLIMATE DATA LAYER                          │
-│  GloFAS v4 (Copernicus)  •  ERA5 via Open-Meteo  •  FAO-56 ET₀  │
-│  NASA MODIS NDVI (MOD13Q1)  •  Open-Meteo DEM Elevation         │
+│  GloFAS v4 (Copernicus)  •  ERA5 via Open-Meteo  •  FAO-56 ET₀   │
+│  NASA MODIS NDVI (MOD13Q1)  •  Open-Meteo DEM Elevation          │
 │  World Bank GDP + Population  •  Open-Meteo Climate Archive      │
 ├──────────────────────────────────────────────────────────────────┤
 │              DATABASE (SQLite via SQLAlchemy)                    │
