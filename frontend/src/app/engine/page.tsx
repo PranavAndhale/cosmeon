@@ -1506,7 +1506,7 @@ export default function GeospatialEngine() {
                   return (
                     <>
                       {/* Prediction explanation text */}
-                      <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
+                      <div className="bg-[#0B1320]/90 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-2">
                         <div className="flex items-center gap-2">
                           <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>
                             Prediction Explanation
@@ -1521,8 +1521,8 @@ export default function GeospatialEngine() {
                             <p className="text-[13px] text-cyan-100 font-sans leading-relaxed">{ml.plain_language_verdict}</p>
                           </div>
                         )}
-                        <p className={`text-[13px] text-gray-300 font-sans leading-relaxed`}>{ml.explanation}</p>
-                        <p className={`text-[10px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
+                        <p className="text-[13px] text-gray-300 font-sans leading-relaxed">{ml.explanation}</p>
+                        <p className={`text-[11px] text-gray-400 ${textMono}`}>{ml.model_inputs_source}</p>
                       </div>
 
                       {/* Waterfall: How probability was built up */}
@@ -2530,9 +2530,9 @@ export default function GeospatialEngine() {
                         return (
                           <>
                             {/* Prediction explanation text */}
-                            <div className="bg-[#0A1628]/90 border border-white/10 rounded-xl p-4 flex flex-col gap-2">
+                            <div className="bg-[#0B1320]/90 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-2">
                               <div className="flex items-center gap-2">
-                                <span className={`text-[13px] text-gray-500 uppercase ${textMono} tracking-widest`}>
+                                <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>
                                   Prediction Explanation
                                 </span>
                                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">
@@ -2545,8 +2545,8 @@ export default function GeospatialEngine() {
                                   <p className="text-[13px] text-cyan-100 font-sans leading-relaxed">{ml.plain_language_verdict}</p>
                                 </div>
                               )}
-                              <p className={`text-[13px] text-gray-300 ${textMono} leading-relaxed`}>{ml.explanation}</p>
-                              <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
+                              <p className="text-[13px] text-gray-300 font-sans leading-relaxed">{ml.explanation}</p>
+                              <p className={`text-[11px] text-gray-400 ${textMono}`}>{ml.model_inputs_source}</p>
                             </div>
 
                             {/* Waterfall: How probability was built up (ad-hoc) */}
@@ -2596,10 +2596,10 @@ export default function GeospatialEngine() {
                             })()}
 
                             {/* Signal Verification Panel */}
-                            <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                            <div className="bg-[#0B1320]/90 border border-white/[0.06] border-t-white/[0.08] rounded-xl p-4 flex flex-col gap-3">
                               <div className="flex items-center justify-between">
-                                <span className={`text-[12px] font-medium font-mono uppercase tracking-widest text-gray-500 mb-1`}>Signal Verification</span>
-                                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${consensusColors2[1]} ${consensusColors2[0]}`}>{elevCount2}/4 agree</span>
+                                <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>Signal Verification</span>
+                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${consensusColors2[1]} ${consensusColors2[0]}`}>{elevCount2}/4 agree</span>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
                                 {convSignals2.map(sig => {
@@ -2608,23 +2608,21 @@ export default function GeospatialEngine() {
                                   const sigBarCol = sig.status === 'elevated' ? 'bg-red-400' : sig.status === 'low' ? 'bg-cyan-400' : 'bg-gray-500';
                                   
                                   return (
-                                    <div key={sig.name} className={`bg-[#0A1628]/60 rounded-lg p-2.5 flex flex-col gap-1.5 border-l-2 ${sigBorderCol} border-y border-y-white/5 border-r border-r-white/5 relative overflow-hidden`}>
-                                      <div className="absolute bottom-0 left-0 h-[2px] bg-white/5 w-full">
-                                        <div className={`h-full ${sigBarCol} transition-all duration-700 ease-out opacity-20`} style={{ width: sigBarWidth }} />
-                                      </div>
-                                      <div className="flex items-center justify-between gap-1 relative z-10">
+                                    <div key={sig.name} className={`bg-[#151A22] rounded-lg p-2.5 flex flex-col gap-1 border border-white/5 border-l-[3px] ${sigBorderCol}`}>
+                                      <div className="flex items-center justify-between gap-1 overflow-hidden">
                                         <span className="text-[11px] font-mono text-gray-300 truncate">{sig.name}</span>
-                                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge2(sig.status)}`}>{sigLabel2(sig.status)}</span>
+                                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${sigBadge2(sig.status)}`}>{sigLabel2(sig.status)}</span>
                                       </div>
-                                      <span className="text-[10px] font-mono text-gray-500 relative z-10">{sig.sub}</span>
-                                      <span className="text-[12px] font-mono font-bold text-white relative z-10">{sig.val}</span>
+                                      <span className="text-[10px] font-mono text-gray-600">{sig.sub}</span>
+                                      <div className="flex items-center justify-between mt-1">
+                                        <div className="h-[2px] w-12 bg-[#0B0E11] rounded-full overflow-hidden shrink-0 hidden md:block"><div className="h-full rounded-full" style={{ width: sigBarWidth, backgroundColor: sigBarCol }} /></div>
+                                        <span className="text-[11px] font-mono text-gray-400 text-right">{sig.val}</span>
+                                      </div>
                                     </div>
                                   );
                                 })}
                               </div>
-                              <div className={`text-[11px] uppercase tracking-widest font-mono font-bold px-3 py-2.5 rounded-lg border flex items-center gap-2 ${consensusColors2[1]} ${consensusColors2[0]} ${predHigh2 ? 'animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.15)]' : ''}`}>
-                                {predHigh2 ? <Activity size={14} /> : <ThumbsUp size={14} />} {consensusMsg2}
-                              </div>
+                              <div className={`text-[12px] font-mono px-3 py-2 rounded-lg border ${consensusColors2[1]} ${consensusColors2[0]}`}>{consensusMsg2}</div>
                             </div>
 
                             {/* Prediction Drivers Block */}
