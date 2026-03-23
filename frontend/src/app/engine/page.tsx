@@ -74,6 +74,7 @@ interface ValidationData {
     flood_risk_level: string;
     forecast_dates: string[];
     forecast_discharge: number[];
+    progression?: DailyRiskProgression[];
   };
 }
 
@@ -1348,8 +1349,8 @@ export default function GeospatialEngine() {
                 {/* 7-Day Forecast Progression Slider */}
                 {(() => {
                   const prog: DailyRiskProgression[] =
-                    (validation?.discharge_data?.progression as DailyRiskProgression[] | undefined)?.length
-                      ? (validation.discharge_data.progression as DailyRiskProgression[])
+                    validation?.discharge_data?.progression?.length
+                      ? validation.discharge_data.progression
                       : validation?.discharge_data
                         ? computeProgression(validation.discharge_data)
                         : [];
