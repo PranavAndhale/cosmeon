@@ -1374,7 +1374,7 @@ export default function GeospatialEngine() {
                             <RechartsTooltip
                               contentStyle={{ background: '#0B0E11', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 10 }}
                               labelFormatter={() => ''}
-                              formatter={(v: number) => [`${v.toFixed(0)} m³/s`, 'Discharge']}
+                              formatter={(v: number | undefined) => [`${(v ?? 0).toFixed(0)} m³/s`, 'Discharge']}
                             />
                           </AreaChart>
                         </ResponsiveContainer>
@@ -2407,7 +2407,7 @@ export default function GeospatialEngine() {
                                   <RechartsTooltip
                                     contentStyle={{ background: '#0B0E11', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 10 }}
                                     labelFormatter={() => ''}
-                                    formatter={(v: number) => [`${v.toFixed(0)} m³/s`, 'Discharge']}
+                                    formatter={(v: number | undefined) => [`${(v ?? 0).toFixed(0)} m³/s`, 'Discharge']}
                                   />
                                 </AreaChart>
                               </ResponsiveContainer>
