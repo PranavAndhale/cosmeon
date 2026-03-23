@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown, Droplets, CloudRain, Mountain, BarChart3, Share2, Link } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, getReportPdfUrl, getLocationReportPdfUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus, DailyRiskProgression, WaterfallData } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, getReportPdfUrl, getLocationReportPdfUrl, fetchPrediction, fetchValidation, fetchExplanation, fetchDischarge, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus, DailyRiskProgression, WaterfallData } from "@/lib/api";
 import { BarChart, Bar } from "recharts";
 
 // ─── Types ───
@@ -74,8 +74,6 @@ interface ValidationData {
     flood_risk_level: string;
     forecast_dates: string[];
     forecast_discharge: number[];
-    historical_discharge?: number[];
-    progression?: DailyRiskProgression[];
   };
 }
 
@@ -307,6 +305,7 @@ export default function GeospatialEngine() {
   const [mapClickPopup, setMapClickPopup] = useState<{ lat: number; lon: number; name?: string } | null>(null);
   const [sliderDay, setSliderDay] = useState(0);
   const [adHocSliderDay, setAdHocSliderDay] = useState(0);
+  const [regionProgression, setRegionProgression] = useState<DailyRiskProgression[]>([]);
 
   // ── UI State ──
   const [searchQuery, setSearchQuery] = useState("");
@@ -481,6 +480,7 @@ export default function GeospatialEngine() {
     setSelectedRegion(reg);
     setRegionTrendData(null);
     setSliderDay(0);
+    setRegionProgression([]);
     setAdHocLocation(null); // clear ad-hoc when selecting a real region
     setAdHocData(null);
     setAdHocExplanation(null);
@@ -629,6 +629,11 @@ export default function GeospatialEngine() {
     fetchValidation(region.id).then(valData => {
       if (valData && valData.validation) setValidation(valData);
       else setValidation(null);
+    });
+
+    // Fetch discharge progression for 7-day slider — independent of validate
+    fetchDischarge(region.id).then((dis: { progression?: DailyRiskProgression[] } | null) => {
+      if (dis?.progression?.length) setRegionProgression(dis.progression);
     });
 
   }, []);
@@ -1355,12 +1360,7 @@ export default function GeospatialEngine() {
 
                 {/* 7-Day Forecast Progression Slider */}
                 {(() => {
-                  const prog: DailyRiskProgression[] =
-                    validation?.discharge_data?.progression?.length
-                      ? validation.discharge_data.progression
-                      : validation?.discharge_data
-                        ? computeProgression(validation.discharge_data)
-                        : [];
+                  const prog = regionProgression;
                   if (prog.length < 2) return null;
                   const today = sliderDay;
                   const todayEntry = prog[today];
