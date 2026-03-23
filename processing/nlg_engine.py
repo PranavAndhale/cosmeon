@@ -93,8 +93,8 @@ class NLGEngine:
                 detection_data, validation_data, external_factors
             )
 
-        # Cache result
-        if region_id:
+        # Cache result — never cache rate-limited responses so next request retries Gemini
+        if region_id and not result.get("rate_limited"):
             _nlg_cache[region_id] = {
                 "hash": self._data_hash(combined),
                 "result": result,
