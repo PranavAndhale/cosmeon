@@ -24,15 +24,16 @@ class NLGEngine:
 
     def __init__(self):
         self.gemini_model = None
+        self.gemini_client = None
         gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
         if gemini_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=gemini_key)
-                self.gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-                logger.info("NLG Engine initialized with Gemini 1.5 Flash")
+                from google import genai
+                self.gemini_client = genai.Client(api_key=gemini_key)
+                self.gemini_model = "gemini-2.0-flash"
+                logger.info("NLG Engine initialized with Gemini 2.0 Flash")
             except ImportError:
-                logger.warning("google-generativeai not installed — using template-based NLG")
+                logger.warning("google-genai not installed — using template-based NLG")
             except Exception as e:
                 logger.warning("Gemini init failed (%s) — using template-based NLG", e)
         else:
@@ -81,7 +82,7 @@ class NLGEngine:
                 return cached["result"]
 
         # Try Gemini-based generation first
-        if self.gemini_model:
+        if self.gemini_client and self.gemini_model:
             result = self._generate_with_gemini(
                 region_name, risk_data, prediction_data,
                 detection_data, validation_data, external_factors
@@ -200,7 +201,9 @@ class NLGEngine:
                 f"Data:\n{data_block}"
             )
 
-            response = self.gemini_model.generate_content(prompt)
+            response = self.gemini_client.models.generate_content(
+                model=self.gemini_model, contents=prompt
+            )
             raw = response.text.strip()
             # Extract JSON — Gemini sometimes wraps in ```json...``` or adds preamble text
             json_match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -208,7 +211,7 @@ class NLGEngine:
                 raise ValueError(f"No JSON object found in Gemini response: {raw[:200]}")
             content = json.loads(json_match.group(0))
             content["generated_at"] = datetime.utcnow().isoformat()
-            content["engine"] = "gemini-1.5-flash"
+            content["engine"] = self.gemini_model
             content["rate_limited"] = False
             return content
 
@@ -222,7 +225,7 @@ class NLGEngine:
                     "highlights": [],
                     "risk_trend": "stable",
                     "generated_at": datetime.utcnow().isoformat(),
-                    "engine": "gemini-1.5-flash",
+                    "engine": self.gemini_model,
                     "rate_limited": True,
                 }
             logger.warning("Gemini generation failed (%s: %s), falling back to templates", type(e).__name__, e)
