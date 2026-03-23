@@ -363,6 +363,15 @@ class TieredFloodPredictor:
         # Approximate std as 30% of mean (conservative proxy when not available)
         std = max(mean * 0.30, 1.0)
 
+        # Fall back to recent historical discharge when forecast is unavailable
+        if not forecast_discharge:
+            hist = discharge_data.get("historical_discharge", [])
+            if hist:
+                forecast_discharge = list(hist[-7:])
+            else:
+                # Last resort: flat line at mean discharge
+                forecast_discharge = [mean] * 7
+
         # Build fallback dates starting from today if not provided
         if not forecast_dates:
             today = _dt.utcnow().date()
