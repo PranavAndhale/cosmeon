@@ -1846,7 +1846,7 @@ export default function GeospatialEngine() {
                                 <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
                                   <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
                                   <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
-                                    Daily AI insight quota reached (free tier: 1,500 req/day). Insights will resume automatically tomorrow — template analysis is shown below.
+                                    AI insights are temporarily unavailable (Gemini free tier limit reached). This resets every minute or at midnight — refresh to retry. Template analysis is shown below.
                                   </p>
                                 </div>
                               )}
@@ -2855,7 +2855,7 @@ export default function GeospatialEngine() {
                                       <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
                                         <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
                                         <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
-                                          Daily AI insight quota reached (free tier: 1,500 req/day). Insights will resume automatically tomorrow — template analysis is shown below.
+                                          AI insights are temporarily unavailable (Gemini free tier limit reached). This resets every minute or at midnight — refresh to retry. Template analysis is shown below.
                                         </p>
                                       </div>
                                     )}
