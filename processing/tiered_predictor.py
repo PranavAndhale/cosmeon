@@ -201,6 +201,7 @@ class TieredFloodPredictor:
             "confidence":              round(confidence, 4),
             "class_probabilities":     class_probs_dict,
             "feature_values":          feature_values,
+            "contributing_factors":    factors,
             "top_drivers":             drivers[:6],
             "all_drivers":             drivers,
             "explanation":             explanation,
