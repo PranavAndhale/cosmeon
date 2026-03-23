@@ -1842,6 +1842,14 @@ export default function GeospatialEngine() {
 
                           {nlgSummary && !nlgLoading && (
                             <>
+                              {nlgSummary.rate_limited && (
+                                <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
+                                  <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
+                                  <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
+                                    Daily AI insight quota reached (free tier: 1,500 req/day). Insights will resume automatically tomorrow — template analysis is shown below.
+                                  </p>
+                                </div>
+                              )}
                               <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
                               {/* Narrative */}
                               <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
@@ -1875,7 +1883,7 @@ export default function GeospatialEngine() {
 
                               {/* Meta */}
                               <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
-                                <span>{nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4o' : '⚙ Template Model'}</span>
+                                <span>{nlgSummary.engine === 'gemini-1.5-flash' ? '✨ Gemini 1.5 Flash' : '⚙ Template Model'}</span>
                                 <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                               </div>
                             </>
@@ -2843,6 +2851,14 @@ export default function GeospatialEngine() {
                                 )}
                                 {nlgSummary && !nlgLoading && (
                                   <>
+                                    {nlgSummary.rate_limited && (
+                                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
+                                        <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
+                                        <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
+                                          Daily AI insight quota reached (free tier: 1,500 req/day). Insights will resume automatically tomorrow — template analysis is shown below.
+                                        </p>
+                                      </div>
+                                    )}
                                     <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
                                     <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
                                       {nlgSummary.narrative.split('**').map((part, i) =>
@@ -2859,7 +2875,7 @@ export default function GeospatialEngine() {
                                         </div>
                                       ))}
                                     </div>
-                                    
+
                                     {nlgSummary.trend_narrative && (
                                       <>
                                         <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5 mt-3">TREND</div>
@@ -2872,7 +2888,7 @@ export default function GeospatialEngine() {
                                     )}
 
                                     <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
-                                      <span>{nlgSummary.engine === 'gpt-4o-mini' ? '✨ GPT-4o' : '⚙ Template Model'}</span>
+                                      <span>{nlgSummary.engine === 'gemini-1.5-flash' ? '✨ Gemini 1.5 Flash' : '⚙ Template Model'}</span>
                                       <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                                     </div>
                                   </>
