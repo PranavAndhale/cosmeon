@@ -185,7 +185,6 @@ export interface NLGSummary {
     generated_at: string;
     engine: string;
     trend_narrative?: string;
-    rate_limited?: boolean;
 }
 
 export async function fetchNLGSummary(regionId: number): Promise<NLGSummary | null> {

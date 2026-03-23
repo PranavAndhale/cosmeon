@@ -93,8 +93,8 @@ class NLGEngine:
                 detection_data, validation_data, external_factors
             )
 
-        # Cache result — never cache rate-limited responses so next request retries Gemini
-        if region_id and not result.get("rate_limited"):
+        # Cache result
+        if region_id:
             _nlg_cache[region_id] = {
                 "hash": self._data_hash(combined),
                 "result": result,
@@ -212,28 +212,15 @@ class NLGEngine:
             content = json.loads(json_match.group(0))
             content["generated_at"] = datetime.utcnow().isoformat()
             content["engine"] = self.gemini_model
-            content["rate_limited"] = False
             return content
 
         except Exception as e:
-            err_str = str(e).lower()
-            # 429 ResourceExhausted = free tier daily/minute limit hit
-            if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
-                logger.warning("Gemini rate limit hit — returning rate_limited flag")
-                return {
-                    "narrative": "",
-                    "highlights": [],
-                    "risk_trend": "stable",
-                    "generated_at": datetime.utcnow().isoformat(),
-                    "engine": self.gemini_model,
-                    "rate_limited": True,
-                }
             logger.warning("Gemini generation failed (%s: %s), falling back to templates", type(e).__name__, e)
             result = self._generate_with_templates(
                 region_name, risk_data, prediction_data,
                 detection_data, validation_data, external_factors
             )
-            result["engine"] = "gemini-1.5-flash(fallback)"
+            result["engine"] = "gemini-2.0-flash(fallback)"
             return result
 
     def _generate_with_templates(
