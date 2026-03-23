@@ -74,6 +74,7 @@ interface ValidationData {
     flood_risk_level: string;
     forecast_dates: string[];
     forecast_discharge: number[];
+    historical_discharge?: number[];
     progression?: DailyRiskProgression[];
   };
 }
@@ -217,8 +218,14 @@ function pulseStyle(status: SituationStatus): React.CSSProperties {
   return {};
 }
 
-function computeProgression(dischargeData: { forecast_discharge?: number[]; forecast_dates?: string[]; mean_discharge_m3s?: number }): DailyRiskProgression[] {
-  const fc = dischargeData.forecast_discharge ?? [];
+function computeProgression(dischargeData: { forecast_discharge?: number[]; forecast_dates?: string[]; historical_discharge?: number[]; mean_discharge_m3s?: number }): DailyRiskProgression[] {
+  let fc = dischargeData.forecast_discharge ?? [];
+  // Fall back to recent historical discharge when forecast is unavailable
+  if (fc.length === 0) {
+    const hist = dischargeData.historical_discharge ?? [];
+    fc = hist.length > 0 ? hist.slice(-7) : [];
+  }
+  if (fc.length === 0) return [];
   const dates = dischargeData.forecast_dates ?? [];
   const mean = Math.max(dischargeData.mean_discharge_m3s ?? 1, 0.01);
   const std = Math.max(mean * 0.30, 1.0);
