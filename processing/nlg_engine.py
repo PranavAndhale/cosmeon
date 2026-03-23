@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -201,12 +202,11 @@ class NLGEngine:
 
             response = self.gemini_model.generate_content(prompt)
             raw = response.text.strip()
-            # Strip markdown code fences if Gemini wraps in ```json ... ```
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            content = json.loads(raw.strip())
+            # Extract JSON — Gemini sometimes wraps in ```json...``` or adds preamble text
+            json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if not json_match:
+                raise ValueError(f"No JSON object found in Gemini response: {raw[:200]}")
+            content = json.loads(json_match.group(0))
             content["generated_at"] = datetime.utcnow().isoformat()
             content["engine"] = "gemini-1.5-flash"
             content["rate_limited"] = False
@@ -225,11 +225,13 @@ class NLGEngine:
                     "engine": "gemini-1.5-flash",
                     "rate_limited": True,
                 }
-            logger.warning("Gemini generation failed (%s), falling back to templates", e)
-            return self._generate_with_templates(
+            logger.warning("Gemini generation failed (%s: %s), falling back to templates", type(e).__name__, e)
+            result = self._generate_with_templates(
                 region_name, risk_data, prediction_data,
                 detection_data, validation_data, external_factors
             )
+            result["engine"] = "gemini-1.5-flash(fallback)"
+            return result
 
     def _generate_with_templates(
         self,
