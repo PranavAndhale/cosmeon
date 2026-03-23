@@ -22,17 +22,20 @@ class NLGEngine:
     """Generates natural language summaries from structured analysis data."""
 
     def __init__(self):
-        self.openai_client = None
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        if api_key:
+        self.gemini_model = None
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gemini_key:
             try:
-                import openai
-                self.openai_client = openai.OpenAI(api_key=api_key)
-                logger.info("NLG Engine initialized with OpenAI GPT integration")
+                import google.generativeai as genai
+                genai.configure(api_key=gemini_key)
+                self.gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+                logger.info("NLG Engine initialized with Gemini 1.5 Flash")
             except ImportError:
-                logger.warning("openai package not installed — using template-based NLG")
+                logger.warning("google-generativeai not installed — using template-based NLG")
+            except Exception as e:
+                logger.warning("Gemini init failed (%s) — using template-based NLG", e)
         else:
-            logger.info("NLG Engine initialized (template-based, no OPENAI_API_KEY set)")
+            logger.info("NLG Engine initialized (template-based, no GEMINI_API_KEY set)")
 
     def _data_hash(self, data: dict) -> str:
         """Create a hash of analysis data to detect changes for cache invalidation."""
@@ -76,9 +79,9 @@ class NLGEngine:
                 logger.info("NLG cache hit for region %s", region_id)
                 return cached["result"]
 
-        # Try GPT-based generation first
-        if self.openai_client:
-            result = self._generate_with_gpt(
+        # Try Gemini-based generation first
+        if self.gemini_model:
+            result = self._generate_with_gemini(
                 region_name, risk_data, prediction_data,
                 detection_data, validation_data, external_factors
             )
@@ -154,7 +157,7 @@ class NLGEngine:
             f"indicates a **{latest_risk}** risk level across {len(timeline_data)} data points."
         )
 
-    def _generate_with_gpt(
+    def _generate_with_gemini(
         self,
         region_name: str,
         risk_data: dict,
@@ -163,9 +166,8 @@ class NLGEngine:
         validation_data: Optional[dict],
         external_factors: Optional[dict],
     ) -> dict:
-        """Generate narrative using OpenAI GPT."""
+        """Generate narrative using Gemini 1.5 Flash (free tier)."""
         try:
-            # Build a focused data block from explain_prediction output
             fv = (prediction_data or {}).get("feature_values", {}) or {}
             cf = (prediction_data or {}).get("contributing_factors", {}) or {}
             data_block = json.dumps({
@@ -184,40 +186,46 @@ class NLGEngine:
                 "top_drivers": (prediction_data or {}).get("top_drivers", [])[:3],
             }, indent=2, default=str)
 
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a climate intelligence analyst for the Cosmeon satellite "
-                            "flood monitoring platform. Generate concise, professional executive "
-                            "summaries. The prediction uses a tiered system: GloFAS v4 river "
-                            "discharge (T1=operational forecast, T4=ERA5 surrogate) as the primary "
-                            "signal, compounded with ERA5 precipitation anomaly and soil moisture. "
-                            "Mention the GloFAS tier and compound signals to convey verifiability. "
-                            "Use specific numbers. Output JSON with keys: "
-                            '"narrative" (2-3 paragraphs), "highlights" (3-5 bullet points), '
-                            '"risk_trend" (one of: escalating, stable, improving, critical).'
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Generate an executive summary for this flood analysis data:\n\n{data_block}",
-                    },
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=600,
-                temperature=0.3,
+            prompt = (
+                "You are a climate intelligence analyst for the Cosmeon flood monitoring platform. "
+                "Generate a concise professional executive summary from the flood analysis data below. "
+                "The prediction uses GloFAS v4 river discharge (T1=operational forecast, T4=ERA5 surrogate) "
+                "as the primary signal, compounded with ERA5 precipitation anomaly and soil moisture. "
+                "Mention the GloFAS tier, discharge anomaly, and compound signals. Use specific numbers. "
+                "Respond ONLY with valid JSON — no markdown, no code fences — with exactly these keys: "
+                '"narrative" (2 short paragraphs as a single string, use \\n\\n to separate), '
+                '"highlights" (array of 3-5 concise strings), '
+                '"risk_trend" (exactly one of: escalating, stable, improving, critical).\n\n'
+                f"Data:\n{data_block}"
             )
 
-            content = json.loads(response.choices[0].message.content)
+            response = self.gemini_model.generate_content(prompt)
+            raw = response.text.strip()
+            # Strip markdown code fences if Gemini wraps in ```json ... ```
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            content = json.loads(raw.strip())
             content["generated_at"] = datetime.utcnow().isoformat()
-            content["engine"] = "gpt-4o-mini"
+            content["engine"] = "gemini-1.5-flash"
+            content["rate_limited"] = False
             return content
 
         except Exception as e:
-            logger.warning("GPT generation failed (%s), falling back to templates", e)
+            err_str = str(e).lower()
+            # 429 ResourceExhausted = free tier daily/minute limit hit
+            if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
+                logger.warning("Gemini rate limit hit — returning rate_limited flag")
+                return {
+                    "narrative": "",
+                    "highlights": [],
+                    "risk_trend": "stable",
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "engine": "gemini-1.5-flash",
+                    "rate_limited": True,
+                }
+            logger.warning("Gemini generation failed (%s), falling back to templates", e)
             return self._generate_with_templates(
                 region_name, risk_data, prediction_data,
                 detection_data, validation_data, external_factors
