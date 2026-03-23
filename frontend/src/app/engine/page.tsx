@@ -1883,7 +1883,7 @@ export default function GeospatialEngine() {
 
                               {/* Meta */}
                               <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
-                                <span>{nlgSummary.engine === 'gemini-1.5-flash' ? '✨ Gemini 1.5 Flash' : nlgSummary.engine?.startsWith('gemini') ? '✨ Gemini (fallback)' : '⚙ Template Model'}</span>
+                                <span>{nlgSummary.engine?.startsWith('gemini') && !nlgSummary.engine?.includes('fallback') ? '✨ Gemini 2.0 Flash' : nlgSummary.engine?.startsWith('gemini') ? '✨ Gemini (fallback)' : '⚙ Template Model'}</span>
                                 <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                               </div>
                             </>
@@ -2888,7 +2888,7 @@ export default function GeospatialEngine() {
                                     )}
 
                                     <div className="flex items-center justify-between text-[9px] text-gray-700 font-mono mt-2 pt-2 border-t border-white/5">
-                                      <span>{nlgSummary.engine === 'gemini-1.5-flash' ? '✨ Gemini 1.5 Flash' : nlgSummary.engine?.startsWith('gemini') ? '✨ Gemini (fallback)' : '⚙ Template Model'}</span>
+                                      <span>{nlgSummary.engine?.startsWith('gemini') && !nlgSummary.engine?.includes('fallback') ? '✨ Gemini 2.0 Flash' : nlgSummary.engine?.startsWith('gemini') ? '✨ Gemini (fallback)' : '⚙ Template Model'}</span>
                                       <span>Generated {new Date(nlgSummary.generated_at).toLocaleTimeString()}</span>
                                     </div>
                                   </>
