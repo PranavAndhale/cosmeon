@@ -1842,14 +1842,6 @@ export default function GeospatialEngine() {
 
                           {nlgSummary && !nlgLoading && (
                             <>
-                              {nlgSummary.rate_limited && (
-                                <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
-                                  <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
-                                  <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
-                                    AI insights are temporarily unavailable (Gemini free tier limit reached). This resets every minute or at midnight — refresh to retry. Template analysis is shown below.
-                                  </p>
-                                </div>
-                              )}
                               <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
                               {/* Narrative */}
                               <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
@@ -2851,14 +2843,6 @@ export default function GeospatialEngine() {
                                 )}
                                 {nlgSummary && !nlgLoading && (
                                   <>
-                                    {nlgSummary.rate_limited && (
-                                      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2.5 mb-3">
-                                        <span className="text-amber-400 mt-0.5 shrink-0">⚠</span>
-                                        <p className="text-[12px] text-amber-300/80 font-sans leading-relaxed">
-                                          AI insights are temporarily unavailable (Gemini free tier limit reached). This resets every minute or at midnight — refresh to retry. Template analysis is shown below.
-                                        </p>
-                                      </div>
-                                    )}
                                     <div className="text-[10px] uppercase tracking-widest text-amber-500/50 font-mono mb-1.5">SITUATION</div>
                                     <div className="text-[13px] text-gray-300 leading-relaxed font-sans whitespace-pre-line -mt-1">
                                       {nlgSummary.narrative.split('**').map((part, i) =>
