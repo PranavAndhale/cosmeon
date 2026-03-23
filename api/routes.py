@@ -800,13 +800,22 @@ def validate_prediction(region_id: int):
 
     # Also get discharge chart data
     discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
+    discharge_dict = discharge.to_dict()
+
+    # Add 7-day progression — use model_hub discharge which always has forecast data
+    try:
+        from processing.model_hub import get_river_discharge as _hub_discharge
+        hub_dis = _hub_discharge(lat, lon)
+        discharge_dict["progression"] = predictor.compute_daily_progression(hub_dis)
+    except Exception:
+        discharge_dict["progression"] = []
 
     return {
         "region_id": region_id,
         "region_name": region.name,
         "our_prediction": our_prediction.to_dict(),
         "validation": validation.to_dict(),
-        "discharge_data": discharge.to_dict(),
+        "discharge_data": discharge_dict,
     }
 
 

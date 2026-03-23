@@ -201,14 +201,19 @@ class NLGEngine:
                 f"Data:\n{data_block}"
             )
 
+            from google.genai import types as _gtypes
             response = self.gemini_client.models.generate_content(
-                model=self.gemini_model, contents=prompt
+                model=self.gemini_model,
+                contents=prompt,
+                config=_gtypes.GenerateContentConfig(
+                    response_mime_type="application/json"
+                ),
             )
             raw = response.text.strip()
-            # Extract JSON — Gemini sometimes wraps in ```json...``` or adds preamble text
+            # Safety net — extract JSON even if model adds surrounding text
             json_match = re.search(r'\{.*\}', raw, re.DOTALL)
             if not json_match:
-                raise ValueError(f"No JSON object found in Gemini response: {raw[:200]}")
+                raise ValueError(f"No JSON in Gemini response: {raw[:200]}")
             content = json.loads(json_match.group(0))
             content["generated_at"] = datetime.utcnow().isoformat()
             content["engine"] = self.gemini_model
