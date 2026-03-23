@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Map, { Marker, Popup, MapRef } from "react-map-gl/maplibre";
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Satellite, Database, Activity, Layers, Download, ChevronDown, Terminal, Play, Pause, MapPin, X, AlertTriangle, Leaf, Building2, Sparkles, TrendingUp, ChevronRight, Shield, DollarSign, Radio, ThumbsUp, ThumbsDown, Droplets, CloudRain, Mountain, BarChart3, Share2, Link } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 
-import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, getReportPdfUrl, getLocationReportPdfUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus } from "@/lib/api";
+import { fetchRegions, fetchRegionRisk, fetchRegionHistory, fetchChanges, fetchLogs, getReportDownloadUrl, getReportPdfUrl, getLocationReportPdfUrl, fetchPrediction, fetchValidation, fetchExplanation, analyzeLocation, explainLocation, geocodeSearch, reverseGeocode, GeoResult, fetchForecast, fetchNLGSummary, ForecastData, NLGSummary, fetchFusionAnalysis, fetchCompoundRisk, fetchFinancialImpact, submitFeedback, fusionLocation, compoundRiskLocation, financialImpactLocation, forecastLocation, nlgSummaryLocation, authLogin, AuthUser, fetchTrends, fetchTrendsLocation, TrendData, fetchSchedulerStatus, SchedulerStatus, fetchOrbAssessment, orbAssessmentLocation, fetchSituation, SituationData, SituationStatus, DailyRiskProgression, WaterfallData } from "@/lib/api";
 import { BarChart, Bar } from "recharts";
 
 // ─── Types ───
@@ -88,6 +88,8 @@ interface ExplainData {
     top_drivers: { feature: string; value: number; importance: number; influence: string }[];
     explanation: string;
     model_inputs_source: string;
+    waterfall?: WaterfallData;
+    plain_language_verdict?: string;
   };
   model_info: {
     architecture: string;
@@ -199,6 +201,45 @@ function markerColorForStatus(status: SituationStatus): string {
   }
 }
 
+function markerGlow(color: string, intensity: 'high' | 'medium' | 'low'): React.CSSProperties {
+  const spread = intensity === 'high' ? 20 : intensity === 'medium' ? 12 : 6;
+  return {
+    background: `radial-gradient(circle, ${color}cc 0%, ${color}55 45%, transparent 75%)`,
+    boxShadow: `0 0 ${spread}px ${color}90, 0 0 ${spread * 2}px ${color}30`,
+  };
+}
+
+function pulseStyle(status: SituationStatus): React.CSSProperties {
+  if (status === 'FLOODING_NOW') return { animationDuration: '1s' };
+  if (status === 'IMMINENT')     return { animationDuration: '2s' };
+  if (status === 'WATCH')        return { animationDuration: '3s' };
+  return {};
+}
+
+function computeProgression(dischargeData: { forecast_discharge?: number[]; forecast_dates?: string[]; mean_discharge_m3s?: number }): DailyRiskProgression[] {
+  const fc = dischargeData.forecast_discharge ?? [];
+  const dates = dischargeData.forecast_dates ?? [];
+  const mean = Math.max(dischargeData.mean_discharge_m3s ?? 1, 0.01);
+  const std = Math.max(mean * 0.30, 1.0);
+  const riskProb: Record<string, number> = { LOW: 0.07, MEDIUM: 0.28, HIGH: 0.62, CRITICAL: 0.87 };
+  return fc.slice(0, 7).map((q, i) => {
+    const anomaly = (q - mean) / std;
+    const ratio = q / mean;
+    const risk_level = ratio > 3.0 || anomaly > 3.0 ? 'CRITICAL'
+      : ratio > 2.0 || anomaly > 2.0 ? 'HIGH'
+      : ratio > 1.3 || anomaly > 1.0 ? 'MEDIUM'
+      : 'LOW';
+    return {
+      day: i,
+      date: dates[i] ?? '',
+      discharge_m3s: Math.round(q * 100) / 100,
+      anomaly_sigma: Math.round(anomaly * 100) / 100,
+      risk_level,
+      risk_probability: riskProb[risk_level] ?? 0.14,
+    };
+  });
+}
+
 // ═══════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════
@@ -256,6 +297,8 @@ export default function GeospatialEngine() {
   /** Real Open-Meteo ERA5 monthly trend data for the current registered region (vegetation orb) */
   const [regionTrendData, setRegionTrendData] = useState<TrendData | null>(null);
   const [mapClickPopup, setMapClickPopup] = useState<{ lat: number; lon: number; name?: string } | null>(null);
+  const [sliderDay, setSliderDay] = useState(0);
+  const [adHocSliderDay, setAdHocSliderDay] = useState(0);
 
   // ── UI State ──
   const [searchQuery, setSearchQuery] = useState("");
@@ -429,6 +472,7 @@ export default function GeospatialEngine() {
   const selectRegion = useCallback((reg: Region | null) => {
     setSelectedRegion(reg);
     setRegionTrendData(null);
+    setSliderDay(0);
     setAdHocLocation(null); // clear ad-hoc when selecting a real region
     setAdHocData(null);
     setAdHocExplanation(null);
@@ -476,7 +520,7 @@ export default function GeospatialEngine() {
     }
 
     const data = await analyzeLocation(lat, lon, locName);
-    if (data) setAdHocData(data);
+    if (data) { setAdHocData(data); setAdHocSliderDay(0); }
     setAdHocLoading(false);
   }, []);
 
@@ -690,27 +734,39 @@ export default function GeospatialEngine() {
             const isSelected = selectedRegion?.id === reg.id;
             const sitReg = situationData?.regions.find(r => r.id === reg.id);
             const status: SituationStatus = sitReg?.situation_status ?? 'NORMAL';
-            const mColor = isSelected ? primaryColor : markerColorForStatus(status);
+            const riskLvl = sitReg?.risk_level ?? 'LOW';
+            const statusColor = markerColorForStatus(status);
+            const riskC = riskColor(riskLvl);
+            const mColor = isSelected ? primaryColor : statusColor;
             const mSize = markerSizeForStatus(status);
+            const glowIntensity: 'high' | 'medium' | 'low' = status === 'FLOODING_NOW' ? 'high' : status === 'IMMINENT' ? 'medium' : 'low';
+            const showPulse = status === 'FLOODING_NOW' || status === 'IMMINENT' || status === 'WATCH' || isSelected;
             return (
               <Marker key={reg.id} longitude={lon} latitude={lat} anchor="center">
                 <div className="flex flex-col items-center gap-0.5">
                   <div
-                    className="rounded-full border-2 cursor-pointer transition-all duration-300 relative flex items-center justify-center"
+                    className="rounded-full cursor-pointer transition-all duration-300 relative flex items-center justify-center"
                     style={{
                       width: mSize + 6,
                       height: mSize + 6,
-                      backgroundColor: isSelected ? mColor : mColor + '30',
-                      borderColor: mColor,
-                      boxShadow: isSelected ? `0 0 15px ${mColor}` : status === 'FLOODING_NOW' ? `0 0 8px ${mColor}60` : 'none',
+                      border: `2px solid ${mColor}`,
+                      ...(isSelected
+                        ? { backgroundColor: mColor, boxShadow: `0 0 18px ${mColor}` }
+                        : markerGlow(statusColor, glowIntensity)
+                      ),
                     }}
                     onClick={() => selectRegion(reg)}
                     onMouseEnter={() => setHoverInfo(reg)}
                     onMouseLeave={() => setHoverInfo(null)}
                   >
-                    {(isSelected || status === 'FLOODING_NOW') && (
-                      <div className="absolute -inset-2 rounded-full animate-ping opacity-25"
-                        style={{ border: `1px solid ${mColor}` }} />
+                    {/* Inner risk-level ring */}
+                    {!isSelected && (
+                      <div className="rounded-full" style={{ width: Math.max(mSize - 4, 4), height: Math.max(mSize - 4, 4), border: `1.5px solid ${riskC}80`, backgroundColor: riskC + '20' }} />
+                    )}
+                    {/* Pulse ring — speed varies by status */}
+                    {showPulse && (
+                      <div className="absolute -inset-2 rounded-full animate-ping opacity-30"
+                        style={{ border: `1px solid ${mColor}`, ...pulseStyle(status) }} />
                     )}
                   </div>
                   <span className="text-[9px] font-mono text-gray-400 text-center leading-none max-w-[60px] truncate"
@@ -731,17 +787,28 @@ export default function GeospatialEngine() {
             </Popup>
           )}
 
-          {/* Ad-hoc location marker (cyan) */}
-          {adHocLocation && (
-            <Marker longitude={adHocLocation.lon} latitude={adHocLocation.lat} anchor="center">
-              <div className="relative flex items-center justify-center">
-                <div className="w-7 h-7 rounded-full border-2 border-cyan-400 bg-cyan-400/20 flex items-center justify-center shadow-[0_0_15px_rgba(0,229,255,0.5)]">
-                  <MapPin size={14} className="text-cyan-400" />
+          {/* Ad-hoc location marker — colored by prediction risk level */}
+          {adHocLocation && (() => {
+            const adHocRisk = adHocData?.prediction?.predicted_risk_level ?? 'LOW';
+            const adHocC = adHocData ? riskColor(adHocRisk) : '#00E5FF';
+            return (
+              <Marker longitude={adHocLocation.lon} latitude={adHocLocation.lat} anchor="center">
+                <div className="relative flex items-center justify-center">
+                  <div
+                    className="w-7 h-7 rounded-full border-2 flex items-center justify-center"
+                    style={{
+                      borderColor: adHocC,
+                      ...markerGlow(adHocC, 'high'),
+                    }}
+                  >
+                    <MapPin size={14} style={{ color: adHocC }} />
+                  </div>
+                  <div className="absolute -inset-2 rounded-full animate-ping opacity-30"
+                    style={{ border: `1px solid ${adHocC}` }} />
                 </div>
-                <div className="absolute -inset-2 rounded-full animate-ping opacity-30 border border-cyan-400" />
-              </div>
-            </Marker>
-          )}
+              </Marker>
+            );
+          })()}
 
           {/* Map click popup — "Analyze this location?" */}
           {mapClickPopup && (
@@ -1278,6 +1345,69 @@ export default function GeospatialEngine() {
                   )}
                 </div>
 
+                {/* 7-Day Forecast Progression Slider */}
+                {(() => {
+                  const prog = validation?.discharge_data
+                    ? computeProgression(validation.discharge_data)
+                    : [];
+                  if (prog.length < 2) return null;
+                  const today = sliderDay;
+                  const todayEntry = prog[today];
+                  const sliderColor = riskColor(todayEntry?.risk_level ?? 'LOW');
+                  return (
+                    <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>7-Day Discharge Forecast</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">GloFAS v4</span>
+                      </div>
+                      {/* Mini area chart */}
+                      <div className="h-[56px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={prog} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                            <defs>
+                              <linearGradient id="progGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={sliderColor} stopOpacity={0.35} />
+                                <stop offset="95%" stopColor={sliderColor} stopOpacity={0} />
+                              </linearGradient>
+                            </defs>
+                            <Area type="monotone" dataKey="discharge_m3s" stroke={sliderColor} fill="url(#progGrad)" strokeWidth={1.5} dot={false} />
+                            <RechartsTooltip
+                              contentStyle={{ background: '#0B0E11', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 10 }}
+                              labelFormatter={() => ''}
+                              formatter={(v: number) => [`${v.toFixed(0)} m³/s`, 'Discharge']}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* Slider track */}
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          type="range" min={0} max={prog.length - 1} step={1} value={sliderDay}
+                          onChange={e => setSliderDay(Number(e.target.value))}
+                          className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                          style={{ accentColor: sliderColor, background: `linear-gradient(to right, ${sliderColor} 0%, ${sliderColor} ${(sliderDay / (prog.length - 1)) * 100}%, #1a1f2e ${(sliderDay / (prog.length - 1)) * 100}%, #1a1f2e 100%)` }}
+                        />
+                        <div className="flex justify-between">
+                          {prog.map((p, i) => (
+                            <span key={i} className={`text-[9px] font-mono ${i === today ? 'text-white font-bold' : 'text-gray-600'}`}>
+                              {i === 0 ? 'Today' : `+${i}d`}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Projected risk badge */}
+                      {todayEntry && (
+                        <div className="flex items-center justify-between px-3 py-2 rounded-lg border" style={{ borderColor: sliderColor + '40', backgroundColor: sliderColor + '15' }}>
+                          <span className="text-[11px] font-mono text-gray-400">{today === 0 ? 'TODAY' : `DAY +${today}`} · {todayEntry.date}</span>
+                          <span className="text-[12px] font-mono font-bold" style={{ color: sliderColor }}>
+                            {todayEntry.risk_level} · {(todayEntry.risk_probability * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Prediction Block */}
                 {prediction && (
                   <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative group shrink-0 ${['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? riskColor(prediction.predicted_risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(prediction.predicted_risk_level) ? `0 0 20px ${riskColor(prediction.predicted_risk_level)}33` : 'none' }}>
@@ -1374,9 +1504,65 @@ export default function GeospatialEngine() {
                             GloFAS Integrated
                           </span>
                         </div>
+                        {/* Plain language verdict */}
+                        {ml.plain_language_verdict && (
+                          <div className="px-3 py-2.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5">
+                            <p className="text-[13px] text-cyan-100 font-sans leading-relaxed">{ml.plain_language_verdict}</p>
+                          </div>
+                        )}
                         <p className={`text-[13px] text-gray-300 font-sans leading-relaxed`}>{ml.explanation}</p>
                         <p className={`text-[10px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                       </div>
+
+                      {/* Waterfall: How probability was built up */}
+                      {ml.waterfall && ml.waterfall.steps.length > 0 && (() => {
+                        const wf = ml.waterfall;
+                        const maxDelta = Math.max(...wf.steps.map(s => Math.abs(s.delta)), 0.01);
+                        return (
+                          <div className="bg-[#0B1320]/90 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-3">
+                            <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>Risk Build-up</span>
+                            <div className="flex flex-col gap-2">
+                              {/* Baseline marker */}
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-gray-600">
+                                <span className="w-28 shrink-0 truncate">Baseline (neutral)</span>
+                                <div className="flex-1 relative h-5 flex items-center">
+                                  <div className="absolute left-0 right-0 h-[1px] bg-white/5" />
+                                  <div className="absolute h-3 w-[1px] bg-cyan-500/50" style={{ left: `${wf.baseline_probability * 100}%` }} />
+                                </div>
+                                <span className="w-9 text-right">{(wf.baseline_probability * 100).toFixed(0)}%</span>
+                              </div>
+                              {wf.steps.map((step, idx) => {
+                                const barPct = Math.min((Math.abs(step.delta) / maxDelta) * 60, 60);
+                                const isUp = step.direction === 'up';
+                                const isDown = step.direction === 'down';
+                                const barColor = isUp ? '#ef4444' : isDown ? '#22d3ee' : '#4b5563';
+                                return (
+                                  <div key={idx} className="flex items-center gap-2 text-[10px] font-mono">
+                                    <span className="w-28 shrink-0 truncate text-gray-400">{step.feature}</span>
+                                    <div className="flex-1 flex items-center gap-1">
+                                      <div className="flex-1 h-4 bg-[#0B0E11] rounded overflow-hidden">
+                                        <div
+                                          className="h-full rounded transition-all duration-500"
+                                          style={{ width: `${barPct}%`, backgroundColor: barColor, opacity: 0.85 }}
+                                        />
+                                      </div>
+                                      <span className={`w-12 text-right font-bold ${isUp ? 'text-red-400' : isDown ? 'text-cyan-400' : 'text-gray-600'}`}>
+                                        {step.delta >= 0 ? '+' : ''}{(step.delta * 100).toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <span className="w-9 text-right text-gray-500">{(step.cumulative * 100).toFixed(0)}%</span>
+                                  </div>
+                                );
+                              })}
+                              <div className="flex items-center gap-2 text-[11px] font-mono font-bold mt-1 border-t border-white/5 pt-2">
+                                <span className="w-28 shrink-0 text-gray-300">Final</span>
+                                <div className="flex-1" />
+                                <span style={{ color: riskColor(ml.risk_level) }}>{(wf.final_probability * 100).toFixed(0)}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Signal Convergence Panel */}
                       <div className="bg-[#0B1320]/90 border border-white/[0.06] border-t-white/[0.08] rounded-xl p-4 flex flex-col gap-3">
@@ -2194,6 +2380,65 @@ export default function GeospatialEngine() {
                         </div>
                       )}
 
+                      {/* 7-Day Forecast Progression Slider (ad-hoc) */}
+                      {(() => {
+                        const prog: DailyRiskProgression[] = adHocData?.discharge?.progression
+                          ?? (adHocData?.discharge ? computeProgression(adHocData.discharge) : []);
+                        if (prog.length < 2) return null;
+                        const today = adHocSliderDay;
+                        const todayEntry = prog[today];
+                        const sliderColor = riskColor(todayEntry?.risk_level ?? 'LOW');
+                        return (
+                          <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>7-Day Discharge Forecast</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyan-500/30 text-cyan-400">GloFAS v4</span>
+                            </div>
+                            <div className="h-[56px]">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={prog} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                                  <defs>
+                                    <linearGradient id="progGradAdhoc" x1="0" y1="0" x2="0" y2="1">
+                                      <stop offset="5%" stopColor={sliderColor} stopOpacity={0.35} />
+                                      <stop offset="95%" stopColor={sliderColor} stopOpacity={0} />
+                                    </linearGradient>
+                                  </defs>
+                                  <Area type="monotone" dataKey="discharge_m3s" stroke={sliderColor} fill="url(#progGradAdhoc)" strokeWidth={1.5} dot={false} />
+                                  <RechartsTooltip
+                                    contentStyle={{ background: '#0B0E11', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, fontSize: 10 }}
+                                    labelFormatter={() => ''}
+                                    formatter={(v: number) => [`${v.toFixed(0)} m³/s`, 'Discharge']}
+                                  />
+                                </AreaChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <input
+                                type="range" min={0} max={prog.length - 1} step={1} value={adHocSliderDay}
+                                onChange={e => setAdHocSliderDay(Number(e.target.value))}
+                                className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                                style={{ accentColor: sliderColor, background: `linear-gradient(to right, ${sliderColor} 0%, ${sliderColor} ${(adHocSliderDay / (prog.length - 1)) * 100}%, #1a1f2e ${(adHocSliderDay / (prog.length - 1)) * 100}%, #1a1f2e 100%)` }}
+                              />
+                              <div className="flex justify-between">
+                                {prog.map((_, i) => (
+                                  <span key={i} className={`text-[9px] font-mono ${i === today ? 'text-white font-bold' : 'text-gray-600'}`}>
+                                    {i === 0 ? 'Today' : `+${i}d`}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            {todayEntry && (
+                              <div className="flex items-center justify-between px-3 py-2 rounded-lg border" style={{ borderColor: sliderColor + '40', backgroundColor: sliderColor + '15' }}>
+                                <span className="text-[11px] font-mono text-gray-400">{today === 0 ? 'TODAY' : `DAY +${today}`} · {todayEntry.date}</span>
+                                <span className="text-[12px] font-mono font-bold" style={{ color: sliderColor }}>
+                                  {todayEntry.risk_level} · {(todayEntry.risk_probability * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* ML Prediction */}
                       {pred && (
                         <div className={`bg-[#151A22]/80 rounded-xl p-4 flex flex-col gap-1 transition-all duration-700 relative group shrink-0 ${['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? 'border-2 border-white/10 animate-[pulse_3s_ease-in-out_infinite]' : 'border border-white/5'}`} style={{ borderColor: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? riskColor(pred.predicted_risk_level ?? pred.risk_level) + '4d' : 'rgba(255,255,255,0.05)', boxShadow: ['CRITICAL', 'HIGH'].includes(pred.predicted_risk_level ?? pred.risk_level) ? `0 0 20px ${riskColor(pred.predicted_risk_level ?? pred.risk_level)}33` : 'none' }}>
@@ -2283,9 +2528,61 @@ export default function GeospatialEngine() {
                                   GloFAS Integrated
                                 </span>
                               </div>
+                              {/* Plain language verdict */}
+                              {ml.plain_language_verdict && (
+                                <div className="px-3 py-2.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5">
+                                  <p className="text-[13px] text-cyan-100 font-sans leading-relaxed">{ml.plain_language_verdict}</p>
+                                </div>
+                              )}
                               <p className={`text-[13px] text-gray-300 ${textMono} leading-relaxed`}>{ml.explanation}</p>
                               <p className={`text-[11px] text-gray-600 ${textMono}`}>{ml.model_inputs_source}</p>
                             </div>
+
+                            {/* Waterfall: How probability was built up (ad-hoc) */}
+                            {ml.waterfall && ml.waterfall.steps.length > 0 && (() => {
+                              const wf = ml.waterfall;
+                              const maxDelta = Math.max(...wf.steps.map((s: { delta: number }) => Math.abs(s.delta)), 0.01);
+                              return (
+                                <div className="bg-[#0B1320]/90 border border-white/[0.06] rounded-xl p-4 flex flex-col gap-3">
+                                  <span className={`text-[12px] font-medium text-gray-500 uppercase ${textMono} tracking-widest`}>Risk Build-up</span>
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2 text-[10px] font-mono text-gray-600">
+                                      <span className="w-28 shrink-0 truncate">Baseline (neutral)</span>
+                                      <div className="flex-1 relative h-5 flex items-center">
+                                        <div className="absolute left-0 right-0 h-[1px] bg-white/5" />
+                                        <div className="absolute h-3 w-[1px] bg-cyan-500/50" style={{ left: `${wf.baseline_probability * 100}%` }} />
+                                      </div>
+                                      <span className="w-9 text-right">{(wf.baseline_probability * 100).toFixed(0)}%</span>
+                                    </div>
+                                    {wf.steps.map((step: { feature: string; delta: number; cumulative: number; direction: string }, idx: number) => {
+                                      const barPct = Math.min((Math.abs(step.delta) / maxDelta) * 60, 60);
+                                      const isUp = step.direction === 'up';
+                                      const isDown = step.direction === 'down';
+                                      const barColor = isUp ? '#ef4444' : isDown ? '#22d3ee' : '#4b5563';
+                                      return (
+                                        <div key={idx} className="flex items-center gap-2 text-[10px] font-mono">
+                                          <span className="w-28 shrink-0 truncate text-gray-400">{step.feature}</span>
+                                          <div className="flex-1 flex items-center gap-1">
+                                            <div className="flex-1 h-4 bg-[#0B0E11] rounded overflow-hidden">
+                                              <div className="h-full rounded transition-all duration-500" style={{ width: `${barPct}%`, backgroundColor: barColor, opacity: 0.85 }} />
+                                            </div>
+                                            <span className={`w-12 text-right font-bold ${isUp ? 'text-red-400' : isDown ? 'text-cyan-400' : 'text-gray-600'}`}>
+                                              {step.delta >= 0 ? '+' : ''}{(step.delta * 100).toFixed(0)}%
+                                            </span>
+                                          </div>
+                                          <span className="w-9 text-right text-gray-500">{(step.cumulative * 100).toFixed(0)}%</span>
+                                        </div>
+                                      );
+                                    })}
+                                    <div className="flex items-center gap-2 text-[11px] font-mono font-bold mt-1 border-t border-white/5 pt-2">
+                                      <span className="w-28 shrink-0 text-gray-300">Final</span>
+                                      <div className="flex-1" />
+                                      <span style={{ color: riskColor(ml.risk_level) }}>{(wf.final_probability * 100).toFixed(0)}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {/* Signal Verification Panel */}
                             <div className="bg-[#151A22]/80 border border-white/5 rounded-xl p-4 flex flex-col gap-3">

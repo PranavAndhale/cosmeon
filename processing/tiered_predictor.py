@@ -192,15 +192,20 @@ class TieredFloodPredictor:
         tier = discharge.get("_tier", "?")
         source = discharge.get("source", "GloFAS v4")
 
+        waterfall = self._build_waterfall(discharge, precip_data, soil, flood_history)
+        plain_verdict = self._plain_language_verdict(risk_level, flood_prob, drivers[:3])
+
         return {
-            "risk_level":          risk_level,
-            "probability":         round(flood_prob, 4),
-            "confidence":          round(confidence, 4),
-            "class_probabilities": class_probs_dict,
-            "feature_values":      feature_values,
-            "top_drivers":         drivers[:6],
-            "all_drivers":         drivers,
-            "explanation":         explanation,
+            "risk_level":              risk_level,
+            "probability":             round(flood_prob, 4),
+            "confidence":              round(confidence, 4),
+            "class_probabilities":     class_probs_dict,
+            "feature_values":          feature_values,
+            "top_drivers":             drivers[:6],
+            "all_drivers":             drivers,
+            "explanation":             explanation,
+            "waterfall":               waterfall,
+            "plain_language_verdict":  plain_verdict,
             "model_inputs_source": (
                 f"GloFAS v4 river discharge (T{tier}: {source}) — primary flood signal. "
                 f"Compound risk: ERA5 reanalysis precipitation (7d/30d anomaly), "
@@ -343,6 +348,48 @@ class TieredFloodPredictor:
 
         return risk_level, prob, conf, contributing_factors
 
+    def compute_daily_progression(self, discharge_data: dict) -> list:
+        """
+        Compute 7-day daily risk progression from GloFAS forecast discharge data.
+
+        Accepts dict from either model_hub.get_river_discharge or
+        LiveFloodDataFetcher.to_dict() — both share the same key names.
+        """
+        from datetime import datetime as _dt, timedelta as _td
+        forecast_discharge = discharge_data.get("forecast_discharge", [])
+        forecast_dates = discharge_data.get("forecast_dates", [])
+        mean = max(discharge_data.get("mean_discharge_m3s", 1.0), 0.01)
+        # Approximate std as 30% of mean (conservative proxy when not available)
+        std = max(mean * 0.30, 1.0)
+
+        # Build fallback dates starting from today if not provided
+        if not forecast_dates:
+            today = _dt.utcnow().date()
+            forecast_dates = [(today + _td(days=i)).isoformat() for i in range(7)]
+
+        progression = []
+        for i, q in enumerate(forecast_discharge[:7]):
+            date_str = forecast_dates[i] if i < len(forecast_dates) else ""
+            anomaly = (q - mean) / std
+            ratio = q / mean
+            if ratio > 3.0 or anomaly > 3.0:
+                risk_level = "CRITICAL"
+            elif ratio > 2.0 or anomaly > 2.0:
+                risk_level = "HIGH"
+            elif ratio > 1.3 or anomaly > 1.0:
+                risk_level = "MEDIUM"
+            else:
+                risk_level = "LOW"
+            progression.append({
+                "day": i,
+                "date": date_str,
+                "discharge_m3s": round(float(q), 2),
+                "anomaly_sigma": round(float(anomaly), 2),
+                "risk_level": risk_level,
+                "risk_probability": _GLOFAS_BASE_PROB.get(risk_level, 0.14),
+            })
+        return progression
+
     def _agreement_bonus(
         self, glofas_level: str, precip_anomaly: float, saturation: float
     ) -> float:
@@ -440,6 +487,122 @@ class TieredFloodPredictor:
             return f"Minimal historical flood coverage ({value:.1f}%)"
 
         return f"{feature}: {value:.3f}"
+
+    def _build_waterfall(
+        self,
+        discharge: dict,
+        precip: dict,
+        soil: dict,
+        flood_history: list,
+    ) -> dict:
+        """
+        Build waterfall step-delta breakdown mirroring _compound_risk delta logic.
+        Returns a dict with baseline, per-step deltas, and final probability.
+        """
+        glofas_level = discharge.get("flood_risk_level", "UNKNOWN")
+        baseline = 0.14  # neutral / UNKNOWN baseline
+        base_prob = _GLOFAS_BASE_PROB.get(glofas_level, baseline)
+        cumulative = base_prob
+        steps = []
+
+        # Step 1: GloFAS primary signal
+        glofas_delta = base_prob - baseline
+        steps.append({
+            "feature": "GloFAS River Discharge",
+            "delta": round(glofas_delta, 3),
+            "cumulative": round(cumulative, 3),
+            "direction": "up" if glofas_delta > 0.005 else ("down" if glofas_delta < -0.005 else "neutral"),
+            "label": f"GloFAS classifies as {glofas_level} → base probability {base_prob:.0%}",
+        })
+
+        # Step 2: ERA5 precipitation (mirrors _compound_risk lines 293-303)
+        precip_anomaly = precip.get("precip_anomaly", 0.0)
+        if precip_anomaly > 2.0:
+            precip_delta = 0.15
+        elif precip_anomaly > 1.0:
+            precip_delta = 0.08
+        elif precip_anomaly > 0.3:
+            precip_delta = 0.04
+        elif precip_anomaly < -1.0:
+            precip_delta = -0.08
+        else:
+            precip_delta = 0.0
+        cumulative = min(1.0, max(0.0, cumulative + precip_delta))
+        precip_7d = precip.get("precip_7d", 0.0)
+        steps.append({
+            "feature": "ERA5 Precipitation",
+            "delta": round(precip_delta, 3),
+            "cumulative": round(cumulative, 3),
+            "direction": "up" if precip_delta > 0 else ("down" if precip_delta < 0 else "neutral"),
+            "label": f"{precip_7d:.0f}mm/7d, anomaly {precip_anomaly:+.2f}\u03c3",
+        })
+
+        # Step 3: Soil moisture (mirrors lines 307-313)
+        saturation = soil.get("saturation_fraction", 0.0)
+        if saturation > 0.8:
+            soil_delta = 0.10
+        elif saturation > 0.6:
+            soil_delta = 0.05
+        else:
+            soil_delta = 0.0
+        cumulative = min(1.0, max(0.0, cumulative + soil_delta))
+        steps.append({
+            "feature": "Soil Saturation",
+            "delta": round(soil_delta, 3),
+            "cumulative": round(cumulative, 3),
+            "direction": "up" if soil_delta > 0 else "neutral",
+            "label": f"Soil moisture: {saturation:.0%}",
+        })
+
+        # Step 4: Historical flood trend (mirrors lines 317-324)
+        flood_pcts = [h.get("flood_percentage", 0) for h in (flood_history or [])[-5:]]
+        mean_flood_pct = float(np.mean(flood_pcts)) if flood_pcts else 0.0
+        if mean_flood_pct > 25:
+            hist_delta = 0.08
+        elif mean_flood_pct > 10:
+            hist_delta = 0.04
+        else:
+            hist_delta = 0.0
+        cumulative = min(1.0, max(0.0, cumulative + hist_delta))
+        steps.append({
+            "feature": "Historical Flood Record",
+            "delta": round(hist_delta, 3),
+            "cumulative": round(cumulative, 3),
+            "direction": "up" if hist_delta > 0 else "neutral",
+            "label": (
+                f"Historical flood avg: {mean_flood_pct:.1f}% area"
+                if mean_flood_pct > 0 else "No significant flood history"
+            ),
+        })
+
+        return {
+            "baseline_probability": baseline,
+            "steps": steps,
+            "final_probability": round(cumulative, 3),
+        }
+
+    def _plain_language_verdict(
+        self,
+        risk_level: str,
+        prob: float,
+        top_drivers: list,
+    ) -> str:
+        """Compose a 2-3 sentence plain-language flood risk verdict for field workers."""
+        level_words = {
+            "CRITICAL": "critically high",
+            "HIGH": "high",
+            "MEDIUM": "moderate",
+            "LOW": "low",
+        }
+        word = level_words.get(risk_level, "uncertain")
+        sentences = [
+            f"This location is at {word} flood risk with an estimated {prob:.0%} probability."
+        ]
+        for d in top_drivers[:2]:
+            influence = d.get("influence", "")
+            if influence:
+                sentences.append(influence + ".")
+        return " ".join(sentences)
 
     def _generate_explanation(
         self,

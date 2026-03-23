@@ -864,12 +864,14 @@ def _discharge_glofas_forecast(lat: float, lon: float, past_days: int) -> dict:
     anomaly = (current - mean) / max(std, 0.01)
     risk = _discharge_to_risk(anomaly, current, mean)
 
+    dates = daily.get("time", [])
     return {
         "current_discharge_m3s": round(current, 2),
         "mean_discharge_m3s": round(mean, 2),
         "anomaly_sigma": round(anomaly, 2),
         "flood_risk_level": risk,
         "forecast_discharge": discharge[-7:],
+        "forecast_dates": dates[-7:],
         "source": "GloFAS v4 operational via Open-Meteo Flood API",
     }
 
