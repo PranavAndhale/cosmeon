@@ -1347,9 +1347,12 @@ export default function GeospatialEngine() {
 
                 {/* 7-Day Forecast Progression Slider */}
                 {(() => {
-                  const prog = validation?.discharge_data
-                    ? computeProgression(validation.discharge_data)
-                    : [];
+                  const prog: DailyRiskProgression[] =
+                    (validation?.discharge_data?.progression as DailyRiskProgression[] | undefined)?.length
+                      ? (validation.discharge_data.progression as DailyRiskProgression[])
+                      : validation?.discharge_data
+                        ? computeProgression(validation.discharge_data)
+                        : [];
                   if (prog.length < 2) return null;
                   const today = sliderDay;
                   const todayEntry = prog[today];
