@@ -632,8 +632,8 @@ export default function GeospatialEngine() {
     });
 
     // Fetch discharge progression for 7-day slider — independent of validate
-    fetchDischarge(region.id).then((dis: { progression?: DailyRiskProgression[] } | null) => {
-      if (dis?.progression?.length) setRegionProgression(dis.progression);
+    fetchDischarge(region.id).then((dis: { discharge?: { progression?: DailyRiskProgression[] } } | null) => {
+      if (dis?.discharge?.progression?.length) setRegionProgression(dis.discharge.progression);
     });
 
   }, []);
