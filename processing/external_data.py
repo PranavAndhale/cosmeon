@@ -6,6 +6,7 @@ to enhance flood risk modeling.
 """
 import logging
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 import numpy as np
 import requests
@@ -39,39 +40,33 @@ class ExternalRiskFactors:
 class ExternalDataIntegrator:
     """Fetches and integrates external datasets for enhanced risk modeling."""
 
+    _elevation_cache: dict = {}  # (lat_r, lon_r) -> elevation dict; elevation is static
+
     def __init__(self):
-        # Open-Meteo API for weather/rainfall (free, no key needed)
-        self.weather_api = "https://api.open-meteo.com/v1/forecast"
+        self.archive_api = "https://archive-api.open-meteo.com/v1/archive"
         self.elevation_api = "https://api.open-meteo.com/v1/elevation"
         logger.info("ExternalDataIntegrator initialized")
 
     def fetch_rainfall(self, lat: float, lon: float, days: int = 7) -> dict:
-        """
-        Fetch recent rainfall data from Open-Meteo API.
-
-        Args:
-            lat: Latitude of region center
-            lon: Longitude of region center
-            days: Number of days of rainfall history
-
-        Returns:
-            dict with rainfall data
-        """
+        """Fetch recent rainfall data from ERA5 archive API (no rate limits)."""
         try:
+            end = date.today() - timedelta(days=1)  # archive has ~1-day lag
+            start = end - timedelta(days=days + 3)  # small buffer
             params = {
                 "latitude": lat,
                 "longitude": lon,
-                "daily": "precipitation_sum,rain_sum",
-                "past_days": days,
-                "forecast_days": 0,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "daily": "precipitation_sum",
             }
-            response = requests.get(self.weather_api, params=params, timeout=30)
+            response = requests.get(self.archive_api, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
 
             daily = data.get("daily", {})
-            precip = daily.get("precipitation_sum", [])
-            total_rainfall = sum(p for p in precip if p is not None)
+            precip = [p for p in daily.get("precipitation_sum", []) if p is not None]
+            precip = precip[-days:]  # trim to requested days
+            total_rainfall = sum(precip)
             avg_daily = total_rainfall / max(len(precip), 1)
 
             result = {
@@ -93,7 +88,10 @@ class ExternalDataIntegrator:
             return {"total_rainfall_mm": 0, "avg_daily_mm": 0, "max_daily_mm": 0, "rainy_days": 0}
 
     def fetch_elevation(self, lat: float, lon: float) -> dict:
-        """Fetch elevation data from Open-Meteo API."""
+        """Fetch elevation data from Open-Meteo API. Cached — elevation is static."""
+        cache_key = (round(lat, 2), round(lon, 2))
+        if cache_key in ExternalDataIntegrator._elevation_cache:
+            return ExternalDataIntegrator._elevation_cache[cache_key]
         try:
             # Sample multiple points in the region
             offsets = [-0.5, -0.25, 0, 0.25, 0.5]
@@ -124,6 +122,7 @@ class ExternalDataIntegrator:
                 result["mean_elevation_m"], result["min_elevation_m"],
                 result["low_elevation_pct"] * 100,
             )
+            ExternalDataIntegrator._elevation_cache[cache_key] = result
             return result
 
         except Exception as e:
