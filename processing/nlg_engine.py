@@ -165,12 +165,23 @@ class NLGEngine:
     ) -> dict:
         """Generate narrative using OpenAI GPT."""
         try:
+            # Build a focused data block from explain_prediction output
+            fv = (prediction_data or {}).get("feature_values", {}) or {}
+            cf = (prediction_data or {}).get("contributing_factors", {}) or {}
             data_block = json.dumps({
                 "region": region_name,
-                "current_risk": risk_data,
-                "tiered_prediction": prediction_data,
-                "live_detection": detection_data,
-                "weather_factors": external_factors,
+                "risk_level": (prediction_data or {}).get("risk_level", risk_data.get("risk_level")),
+                "flood_probability": (prediction_data or {}).get("probability", 0),
+                "confidence": (prediction_data or {}).get("confidence", 0),
+                "glofas_tier": cf.get("glofas_tier"),
+                "glofas_source": cf.get("glofas_source"),
+                "discharge_anomaly_sigma": fv.get("discharge_anomaly_sigma"),
+                "precip_7d_mm": fv.get("precip_7d_mm"),
+                "precip_anomaly_sigma": fv.get("precip_anomaly"),
+                "soil_saturation": fv.get("soil_saturation"),
+                "precip_compound_uplift": cf.get("precip_compound"),
+                "soil_compound_uplift": cf.get("soil_compound"),
+                "top_drivers": (prediction_data or {}).get("top_drivers", [])[:3],
             }, indent=2, default=str)
 
             response = self.openai_client.chat.completions.create(
@@ -221,92 +232,95 @@ class NLGEngine:
         validation_data: Optional[dict],
         external_factors: Optional[dict],
     ) -> dict:
-        """Generate narrative using template-based string interpolation."""
-        risk_level = risk_data.get("risk_level", "UNKNOWN")
-        flood_pct = risk_data.get("flood_percentage", 0)
-        confidence = risk_data.get("confidence_score", 0)
-        flood_area = risk_data.get("flood_area_km2", 0)
-        total_area = risk_data.get("total_area_km2", 0)
+        """Generate narrative using template-based string interpolation.
 
-        # Severity context
+        prediction_data is expected to be the output of explain_prediction()
+        (keys: risk_level, probability, confidence, contributing_factors, feature_values).
+        """
+        # --- Primary data source: explain_prediction output ---
+        if prediction_data:
+            # explain_prediction() format
+            risk_level = prediction_data.get("risk_level") or risk_data.get("risk_level", "UNKNOWN")
+            pred_prob  = prediction_data.get("probability", prediction_data.get("flood_probability", 0))
+            pred_conf  = prediction_data.get("confidence", 0)
+            cf         = prediction_data.get("contributing_factors", {}) or {}
+            fv         = prediction_data.get("feature_values", {}) or {}
+            tier       = cf.get("glofas_tier", "?")
+            source     = cf.get("glofas_source", "GloFAS v4")
+            precip_delta = cf.get("precip_compound", 0.0)
+            soil_delta   = cf.get("soil_compound", 0.0)
+            precip_7d    = fv.get("precip_7d_mm", 0.0)
+            anomaly_sigma = fv.get("discharge_anomaly_sigma", 0.0)
+            soil_sat     = fv.get("soil_saturation", 0.0)
+            glofas_level = ["LOW", "MEDIUM", "HIGH", "CRITICAL"][
+                min(int(round(fv.get("glofas_flood_risk", 0))), 3)
+            ] if fv else "UNKNOWN"
+        else:
+            risk_level = risk_data.get("risk_level", "UNKNOWN")
+            pred_prob  = risk_data.get("confidence_score", 0)
+            pred_conf  = risk_data.get("confidence_score", 0)
+            cf = fv = {}
+            tier = source = "?"
+            precip_delta = soil_delta = precip_7d = anomaly_sigma = soil_sat = 0.0
+            glofas_level = "UNKNOWN"
+
         severity_phrases = {
-            "CRITICAL": ("demands immediate attention", "critical"),
-            "HIGH": ("warrants close monitoring", "elevated"),
+            "CRITICAL": ("demands immediate emergency response", "critically elevated"),
+            "HIGH": ("warrants close monitoring and preparedness", "elevated"),
             "MEDIUM": ("requires ongoing observation", "moderate"),
             "LOW": ("presents minimal concern at this time", "low"),
         }
         phrase, adj = severity_phrases.get(risk_level, ("requires review", risk_level.lower()))
 
-        # --- Paragraph 1: Current situation ---
+        # --- Paragraph 1: Current ML-assessed situation ---
         p1 = (
-            f"The current flood risk assessment for **{region_name}** indicates a "
-            f"**{risk_level}** threat level that {phrase}. Satellite analysis reveals "
-            f"that approximately **{flood_pct:.1%}** of the monitored area "
-            f"({flood_area:.1f} km² out of {total_area:.0f} km²) shows flood indicators, "
-            f"with a model confidence of **{confidence:.0%}**."
+            f"The TieredFloodPredictor (GloFAS v4 + ERA5) has assessed **{region_name}** "
+            f"as **{risk_level}** flood risk — a threat level that {phrase}. "
+            f"The estimated flood probability is **{pred_prob:.0%}** with "
+            f"**{pred_conf:.0%}** model confidence, based on live satellite and "
+            f"reanalysis data."
         )
 
-        # --- Paragraph 2: Prediction + Detection ---
+        # --- Paragraph 2: Signal breakdown ---
         p2_parts = []
         if prediction_data:
-            pred_risk = prediction_data.get("predicted_risk_level", "N/A")
-            pred_prob = prediction_data.get("flood_probability", 0)
-            pred_conf = prediction_data.get("confidence", 0)
-            cf = prediction_data.get("contributing_factors", {}) or {}
-            tier = cf.get("glofas_tier", "?")
-            source = cf.get("glofas_source", "GloFAS v4")
-            precip_delta = cf.get("precip_compound", 0.0)
-            soil_delta = cf.get("soil_compound", 0.0)
-            # Build primary prediction sentence
             p2_parts.append(
-                f"The tiered flood assessment places this area at **{pred_risk}** risk "
-                f"({pred_prob:.0%} probability, {pred_conf:.0%} confidence). "
-                f"Primary signal: **{source}** (tier T{tier}) — "
-                f"the same operational model used by European flood early-warning services."
+                f"Primary signal: **GloFAS v4** river discharge classifies this location "
+                f"as **{glofas_level}** (T{tier}: {source}), the same operational dataset "
+                f"used by European flood early-warning services. "
+                f"Discharge anomaly: **{anomaly_sigma:+.1f}σ** vs seasonal mean."
             )
-            # Compound signal summary
             compound_parts = []
-            if precip_delta > 0.04:
-                compound_parts.append(f"elevated ERA5 precipitation (+{precip_delta:.0%} compound uplift)")
-            elif precip_delta < -0.04:
-                compound_parts.append(f"below-normal ERA5 precipitation ({precip_delta:.0%} compound reduction)")
-            if soil_delta > 0.04:
-                compound_parts.append(f"high soil saturation (+{soil_delta:.0%} compound uplift)")
+            if precip_7d > 0:
+                anom_label = f"{precip_delta:+.0%} anomaly" if precip_delta != 0 else "near-normal"
+                compound_parts.append(f"**{precip_7d:.0f}mm** 7-day ERA5 rainfall ({anom_label})")
+            if soil_sat > 0:
+                compound_parts.append(f"**{soil_sat:.0%}** soil saturation (ERA5/ECMWF IFS)")
             if compound_parts:
-                p2_parts.append(f"Compound signals reinforcing this estimate: {', '.join(compound_parts)}.")
-        if detection_data:
-            det_risk = detection_data.get("detected_risk_level", "N/A")
-            rainfall = detection_data.get("rainfall_7d_mm", 0)
-            p2_parts.append(
-                f"Live satellite detection independently confirms a **{det_risk}** risk, with "
-                f"**{rainfall:.0f}mm** of rainfall recorded over the past 7 days."
-            )
+                p2_parts.append(f"Compound signals: {', '.join(compound_parts)}.")
+            if precip_delta > 0.04:
+                p2_parts.append(f"Elevated precipitation adds **+{precip_delta:.0%}** to the base flood probability.")
+            elif precip_delta < -0.04:
+                p2_parts.append(f"Below-normal precipitation reduces the base probability by **{abs(precip_delta):.0%}**.")
+            if soil_delta > 0.04:
+                p2_parts.append(f"High soil saturation adds a further **+{soil_delta:.0%}** compound uplift.")
 
         p2 = " ".join(p2_parts) if p2_parts else (
-            "Prediction data will be available once the tiered assessment completes."
+            "Live signal data will be available once the tiered assessment completes."
         )
 
         # --- Highlights ---
         highlights = [
-            f"Risk Level: {risk_level} ({confidence:.0%} confidence)",
-            f"Flood Coverage: {flood_pct:.1%} of monitored area ({flood_area:.1f} km²)",
+            f"Risk Level: **{risk_level}** — {pred_prob:.0%} probability, {pred_conf:.0%} confidence",
         ]
         if prediction_data:
-            pred_cf = prediction_data.get("contributing_factors", {}) or {}
-            pred_tier = pred_cf.get("glofas_tier", "?")
-            highlights.append(
-                f"Prediction: {prediction_data.get('predicted_risk_level', 'N/A')} "
-                f"({prediction_data.get('flood_probability', 0):.0%} probability) — "
-                f"backed by GloFAS v4 T{pred_tier}"
-            )
-        if detection_data:
-            highlights.append(
-                f"7-Day Rainfall: {detection_data.get('rainfall_7d_mm', 0):.0f}mm"
-            )
-        if external_factors:
-            highlights.append(
-                f"Elevation: {external_factors.get('elevation_mean_m', 'N/A')}m avg"
-            )
+            highlights.append(f"GloFAS v4 river classification: {glofas_level} (T{tier})")
+            if anomaly_sigma != 0:
+                highlights.append(f"Discharge anomaly: {anomaly_sigma:+.1f}σ vs seasonal mean")
+            if precip_7d > 0:
+                highlights.append(f"7-day ERA5 rainfall: {precip_7d:.0f}mm")
+            if soil_sat > 0:
+                highlights.append(f"Soil saturation: {soil_sat:.0%} (ERA5/ECMWF IFS)")
 
         # --- Risk trend ---
         risk_trend_map = {"CRITICAL": "critical", "HIGH": "escalating", "MEDIUM": "stable", "LOW": "improving"}

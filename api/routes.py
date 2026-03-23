@@ -1454,51 +1454,43 @@ def get_nlg_summary(region_id: int):
         if not region:
             return {"error": f"Region {region_id} not found"}
 
-        # Gather all analysis data
-        risk = db.get_latest_risk(region_id)
-        risk_data = risk.to_dict() if risk else {"risk_level": "UNKNOWN", "flood_percentage": 0, "confidence_score": 0, "flood_area_km2": 0, "total_area_km2": 0}
+        # Use explain_prediction for full signal data (GloFAS + ERA5 + feature values)
+        bbox = region.bbox
+        lat_c, lon_c = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
+        history = db.get_risk_history(region_id, limit=10)
+        hist_dicts = [h.to_dict() for h in history]
 
-        # Prediction — use global TieredFloodPredictor (GloFAS v4 + ERA5, no training delay)
         prediction_data = None
         try:
-            bbox = region.bbox
-            lat_c, lon_c = (bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2
-            history = db.get_risk_history(region_id, limit=10)
-            hist_dicts = [h.to_dict() for h in history]
-            pred = predictor.predict(hist_dicts, {"_lat": lat_c, "_lon": lon_c}, region.name)
-            prediction_data = pred.to_dict() if pred else None
+            prediction_data = predictor.explain_prediction(
+                hist_dicts, {"_lat": lat_c, "_lon": lon_c}, region.name
+            )
         except Exception:
             pass
 
-        # Detection (use cached detection if available)
-        detection_data = None
-        try:
-            from processing.live_flood_data import LiveFloodDetector
-            detector = LiveFloodDetector()
-            bbox = region.bbox
-            lat, lon = (bbox[1]+bbox[3])/2, (bbox[0]+bbox[2])/2
-            detection_data = detector.analyze_location(lat, lon, region.name)
-        except Exception:
-            pass
-
-        # Validation
-        validation_data = None
-        try:
-            from processing.live_flood_data import LiveFloodDetector
-            detector = LiveFloodDetector()
-            bbox = region.bbox
-            lat, lon = (bbox[1]+bbox[3])/2, (bbox[0]+bbox[2])/2
-            validation_data = detector.validate_with_glofas(lat, lon)
-        except Exception:
-            pass
+        # Build risk_data from live prediction (not stale DB)
+        if prediction_data:
+            risk_data = {
+                "risk_level": prediction_data.get("risk_level", "UNKNOWN"),
+                "flood_percentage": prediction_data.get("probability", 0),
+                "confidence_score": prediction_data.get("confidence", 0),
+                "flood_area_km2": 0,
+                "total_area_km2": 0,
+            }
+        else:
+            risk = db.get_latest_risk(region_id)
+            risk_data = risk.to_dict() if risk else {
+                "risk_level": "UNKNOWN", "flood_percentage": 0,
+                "confidence_score": 0, "flood_area_km2": 0, "total_area_km2": 0,
+            }
 
         engine = _get_nlg_engine()
         result = engine.generate_executive_summary(
             region_name=region.name,
             risk_data=risk_data,
             prediction_data=prediction_data,
-            detection_data=detection_data,
-            validation_data=validation_data,
+            detection_data=None,
+            validation_data=None,
             region_id=region_id,
         )
 
@@ -1523,44 +1515,22 @@ def get_nlg_summary_location(body: LocationRequest):
         lat, lon = body.lat, body.lon
         name = body.name or f"{lat:.2f}, {lon:.2f}"
 
-        # Get live detection data
-        detection_data = None
-        try:
-            det = analysis_engine.analyze_by_coords(lat, lon, name)
-            detection_data = det.to_dict() if det else None
-        except Exception:
-            pass
-
-        # Get ML prediction
+        # Use explain_prediction for full signal data (GloFAS + ERA5 + feature values)
         prediction_data = None
         try:
-            pred = predictor.predict_by_coords(lat, lon, name)
-            prediction_data = pred.to_dict() if pred else None
-        except Exception:
-            pass
-
-        # Get GloFAS validation
-        validation_data = None
-        try:
-            from processing.live_flood_data import LiveFloodDataFetcher
-            live_fetcher = LiveFloodDataFetcher()
-            val = live_fetcher.validate_prediction(
-                lat=lat, lon=lon,
-                our_risk_level=prediction_data.get("predicted_risk_level", "UNKNOWN") if prediction_data else "UNKNOWN",
-                our_probability=prediction_data.get("flood_probability", 0) if prediction_data else 0,
-                our_confidence=prediction_data.get("confidence", 0) if prediction_data else 0,
+            prediction_data = predictor.explain_prediction(
+                [], {"_lat": lat, "_lon": lon}, name
             )
-            validation_data = val.to_dict() if val else None
         except Exception:
             pass
 
-        # Build risk_data from detection
+        # Build risk_data from live prediction
         risk_data = {
-            "risk_level": detection_data.get("detected_risk_level", "UNKNOWN") if detection_data else "UNKNOWN",
-            "flood_percentage": detection_data.get("flood_probability", 0) if detection_data else 0,
-            "confidence_score": detection_data.get("confidence_score", 0) if detection_data else 0,
-            "flood_area_km2": detection_data.get("flood_area_km2", 0) if detection_data else 0,
-            "total_area_km2": detection_data.get("total_area_km2", 0) if detection_data else 0,
+            "risk_level": prediction_data.get("risk_level", "UNKNOWN") if prediction_data else "UNKNOWN",
+            "flood_percentage": prediction_data.get("probability", 0) if prediction_data else 0,
+            "confidence_score": prediction_data.get("confidence", 0) if prediction_data else 0,
+            "flood_area_km2": 0,
+            "total_area_km2": 0,
         }
 
         engine = _get_nlg_engine()
@@ -1568,8 +1538,8 @@ def get_nlg_summary_location(body: LocationRequest):
             region_name=name,
             risk_data=risk_data,
             prediction_data=prediction_data,
-            detection_data=detection_data,
-            validation_data=validation_data,
+            detection_data=None,
+            validation_data=None,
         )
 
         return result
