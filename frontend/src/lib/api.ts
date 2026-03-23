@@ -366,6 +366,29 @@ export interface SituationRegion {
     contributing_factors: Record<string, number | string>;
 }
 
+export interface DailyRiskProgression {
+    day: number;
+    date: string;
+    discharge_m3s: number;
+    anomaly_sigma: number;
+    risk_level: string;
+    risk_probability: number;
+}
+
+export interface WaterfallStep {
+    feature: string;
+    delta: number;
+    cumulative: number;
+    direction: 'up' | 'down' | 'neutral';
+    label: string;
+}
+
+export interface WaterfallData {
+    baseline_probability: number;
+    steps: WaterfallStep[];
+    final_probability: number;
+}
+
 export interface SituationData {
     regions: SituationRegion[];
     summary: {

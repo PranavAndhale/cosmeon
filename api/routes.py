@@ -825,10 +825,16 @@ def get_river_discharge(region_id: int):
     discharge = live_fetcher.fetch_river_discharge(lat, lon, past_days=30, forecast_days=7)
     weather_forecast = live_fetcher.fetch_weather_forecast(lat, lon, days=7)
 
+    discharge_dict = discharge.to_dict()
+    try:
+        discharge_dict["progression"] = predictor.compute_daily_progression(discharge_dict)
+    except Exception:
+        discharge_dict["progression"] = []
+
     return {
         "region_id": region_id,
         "region_name": region.name,
-        "discharge": discharge.to_dict(),
+        "discharge": discharge_dict,
         "weather_forecast": weather_forecast,
     }
 
@@ -1071,11 +1077,17 @@ def analyze_location(req: LocationRequest):
         ml_prediction = f_pred.result()
         discharge     = f_dis.result()
 
+    discharge_with_progression = dict(discharge)
+    try:
+        discharge_with_progression["progression"] = predictor.compute_daily_progression(discharge)
+    except Exception:
+        discharge_with_progression["progression"] = []
+
     return {
         "status": "analysis_complete",
         "location": {"lat": lat, "lon": lon, "name": name},
         "prediction": ml_prediction.to_dict(),
-        "discharge": discharge,
+        "discharge": discharge_with_progression,
     }
 
 
