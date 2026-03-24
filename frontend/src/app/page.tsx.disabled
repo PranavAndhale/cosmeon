@@ -134,14 +134,33 @@ export default function LandingPage() {
                                 <div className="text-xs font-mono text-gray-500">LIVE FEED // COSMEON_01</div>
                             </div>
                             <div className="flex-1 relative overflow-hidden">
-                                <Image
-                                    src="/engine_screenshot.png"
-                                    alt="COSMEON Engine — live flood intelligence dashboard"
-                                    fill
-                                    quality={100}
-                                    priority
-                                    className="object-cover object-top"
-                                />
+                                {/* Grid background */}
+                                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:30px_30px]" />
+
+                                <Globe size={400} strokeWidth={0.5} className="absolute -right-24 -bottom-24 text-[#0EA5E9]/20 animate-[spin_60s_linear_infinite]" />
+
+                                {/* Overlay cards */}
+                                <div className="absolute top-8 left-8 bg-[#0F0F0F]/80 backdrop-blur-xl p-5 rounded-2xl border border-white/10 flex flex-col gap-3 w-56 z-10 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-[10px] font-bold text-[#0EA5E9] uppercase tracking-widest">Detection</div>
+                                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    </div>
+                                    <div className="text-base font-bold text-white">Flood Risk Anomaly</div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-1.5 flex-1 bg-gray-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-gradient-to-r from-red-500 to-[#10B981] w-[80%]" />
+                                        </div>
+                                        <span className="text-xs font-mono text-white">HI</span>
+                                    </div>
+                                </div>
+
+                                <div className="absolute bottom-8 right-8 bg-[#0F0F0F]/80 backdrop-blur-xl p-5 rounded-2xl border border-white/10 flex flex-col gap-2 w-56 z-10 text-right shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+                                    <div className="text-[10px] font-bold text-[#10B981] uppercase tracking-widest flex items-center justify-end gap-2">
+                                        <Target size={12} /> Model Confidence
+                                    </div>
+                                    <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-l from-white to-gray-400">94.2%</div>
+                                    <div className="text-xs text-gray-400 font-medium tracking-wide">Sentinel-1 Validated</div>
+                                </div>
                             </div>
                         </div>
                     </motion.div>
