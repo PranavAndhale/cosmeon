@@ -1,17 +1,4 @@
-# ─── Stage 1: Build Next.js static export ───
-FROM node:20-alpine AS frontend-build
-
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-COPY frontend/ ./
-
-# Set NEXT_BUILD_MODE=export so next.config.ts uses output: "export"
-ENV NEXT_BUILD_MODE=export
-RUN npm run build
-
-# ─── Stage 2: Python runtime + static files ───
+# ─── Single stage: Python runtime + pre-built static frontend ───
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -33,11 +20,11 @@ COPY data/processed/ ./data/processed/
 COPY main.py .
 COPY seed_demo.py .
 
+# Copy pre-built frontend static files
+COPY static/ ./static/
+
 # Create required directories
 RUN mkdir -p data/raw logs
-
-# Copy built frontend from Stage 1
-COPY --from=frontend-build /frontend/out ./static
 
 # Expose port (Render injects PORT env variable)
 EXPOSE 10000
